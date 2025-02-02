@@ -3,6 +3,7 @@ package net.jelly.abyss_mod.entity;
 import net.jelly.abyss_mod.AbyssMod;
 import net.jelly.abyss_mod.entity.IK.worm.WormController;
 import net.jelly.abyss_mod.entity.IK.worm.WormSegment;
+import net.jelly.abyss_mod.entity.multipart.WormEntity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.MobCategory;
 import net.minecraftforge.eventbus.api.IEventBus;
@@ -24,6 +25,11 @@ public class ModEntities {
             EntityType.Builder.of(WormController::new, MobCategory.MISC)
                     .sized(0.5f,0.5f)
                     .build("worm_chain")
+    );
+    public static final RegistryObject<EntityType<WormEntity>> WORM = ENTITY_TYPES.register("worm", () ->
+            EntityType.Builder.of(WormEntity::new, MobCategory.MISC)
+                    .sized(0.5f,0.5f)
+                    .build("worm")
     );
 
     public static void register(IEventBus eventBus) {

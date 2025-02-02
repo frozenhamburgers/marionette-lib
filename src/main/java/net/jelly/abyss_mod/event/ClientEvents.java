@@ -1,12 +1,15 @@
 package net.jelly.abyss_mod.event;
 
 import net.jelly.abyss_mod.AbyssMod;
+import net.jelly.abyss_mod.entity.multipart.WormModel;
+import net.jelly.abyss_mod.entity.multipart.WormRenderer;
 import net.jelly.abyss_mod.networking.PacketHandler;
 import net.jelly.abyss_mod.networking.TestPacket;
 import net.jelly.abyss_mod.vfx.SonicBoomPostProcessor;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.packs.PackType;
 import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.client.event.EntityRenderersEvent;
 import net.minecraftforge.client.event.InputEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
@@ -38,6 +41,11 @@ public class ClientEvents {
 
         @SubscribeEvent
         public static void registerRenderers(FMLClientSetupEvent event) {
+        }
+
+        @SubscribeEvent
+        public static void registerLayer(EntityRenderersEvent.RegisterLayerDefinitions event) {
+            event.registerLayerDefinition(WormRenderer.RHINO_LAYER, WormModel::createBodyLayer);
         }
 
     }

@@ -1,6 +1,8 @@
 package net.jelly.abyss_mod.event;
 
 import net.jelly.abyss_mod.AbyssMod;
+import net.jelly.abyss_mod.entity.ModEntities;
+import net.jelly.abyss_mod.entity.multipart.WormEntity;
 import net.jelly.abyss_mod.item.ModItems;
 import net.minecraft.world.item.CreativeModeTabs;
 import net.minecraftforge.event.BuildCreativeModeTabContentsEvent;
@@ -14,6 +16,7 @@ public class ModEventBusEvents {
     // events that implement IModBusEvent are mod bus events
     @SubscribeEvent
     public static void registerAttributes(EntityAttributeCreationEvent event) {
+        event.put(ModEntities.WORM.get(), WormEntity.createAttributes().build());
     }
 
     // creative mode tabs

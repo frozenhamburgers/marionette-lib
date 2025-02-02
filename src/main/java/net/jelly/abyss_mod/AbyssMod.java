@@ -4,6 +4,7 @@ import com.mojang.logging.LogUtils;
 import net.jelly.abyss_mod.entity.IK.worm.WormControllerRenderer;
 import net.jelly.abyss_mod.entity.IK.worm.WormSegmentRenderer;
 import net.jelly.abyss_mod.entity.ModEntities;
+import net.jelly.abyss_mod.entity.multipart.WormRenderer;
 import net.jelly.abyss_mod.item.ModItems;
 import net.jelly.abyss_mod.networking.PacketHandler;
 import net.minecraft.client.renderer.entity.EntityRenderers;
@@ -80,6 +81,7 @@ public class AbyssMod
             // register entity renderers
             EntityRenderers.register(ModEntities.WORM_SEGMENT.get(), WormSegmentRenderer::new);
             EntityRenderers.register(ModEntities.WORM_CONTROLLER.get(), WormControllerRenderer::new);
+            EntityRenderers.register(ModEntities.WORM.get(), WormRenderer::new);
         }
     }
 }
