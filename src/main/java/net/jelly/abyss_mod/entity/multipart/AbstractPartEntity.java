@@ -7,17 +7,47 @@ import net.minecraft.world.InteractionResult;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.entity.PartEntity;
 
 public class AbstractPartEntity<T extends Entity> extends PartEntity<T> {
+    Vec3 newPosition = null;
 
     public AbstractPartEntity(T parent) {
         super(parent);
         this.blocksBuilding = true;
     }
 
+    public void setPartPos(Vec3 pos) {
+        setPartPos(pos.x, pos.y, pos.z);
+    }
+
+    public void setPartPos(double x, double y, double z) {
+        newPosition = new Vec3(x,y,z);
+    }
+
+    @Override
+    public Vec3 position() {
+        if(newPosition != null) return newPosition;
+        else return super.position();
+    }
+
+    // call this after finalizing positions
+    public void tick() {
+        if(newPosition != null) {
+            this.xo = this.getX();
+            this.yo = this.getY();
+            this.zo = this.getZ();
+            this.xOld = this.getX();
+            this.yOld = this.getY();
+            this.zOld = this.getZ();
+            setPos(newPosition);
+        }
+        super.tick();
+    }
 
 
+    // entity characteristics
     @Override
     public boolean fireImmune() {
         return true;

@@ -28,7 +28,7 @@ public class ModEntities {
     );
     public static final RegistryObject<EntityType<WormEntity>> WORM = ENTITY_TYPES.register("worm", () ->
             EntityType.Builder.of(WormEntity::new, MobCategory.MISC)
-                    .sized(0.5f,0.5f)
+                    .sized(1.0f,1.0f)
                     .build("worm")
     );
 

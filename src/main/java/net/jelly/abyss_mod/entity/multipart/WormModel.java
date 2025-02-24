@@ -7,6 +7,7 @@ import net.minecraft.client.model.geom.ModelPart;
 import net.minecraft.client.model.geom.PartPose;
 import net.minecraft.client.model.geom.builders.*;
 import net.minecraft.util.Mth;
+import net.minecraft.world.phys.Vec3;
 
 public class WormModel extends EntityModel<WormEntity> {
     private final ModelPart segment1;
@@ -14,6 +15,7 @@ public class WormModel extends EntityModel<WormEntity> {
     private final ModelPart segment3;
     private final ModelPart segment4;
     private final ModelPart segment5;
+    private final ModelPart[] allSegments;
 
     public WormModel(ModelPart root) {
         this.segment1 = root.getChild("segment1");
@@ -21,6 +23,7 @@ public class WormModel extends EntityModel<WormEntity> {
         this.segment3 = root.getChild("segment3");
         this.segment4 = root.getChild("segment4");
         this.segment5 = root.getChild("segment5");
+        allSegments = new ModelPart[]{segment1, segment2, segment3, segment4, segment5};
     }
 
     public static LayerDefinition createBodyLayer() {
@@ -51,6 +54,19 @@ public class WormModel extends EntityModel<WormEntity> {
 
     @Override
     public void setupAnim(WormEntity entity, float pLimbSwing, float pLimbSwingAmount, float ageInTicks, float pNetHeadYaw, float pHeadPitch) {
+        WormPartEntity[] allParts = (WormPartEntity[])(entity.getParts());
+        float partialTicks = ageInTicks - entity.tickCount;
+        for(int i=0 ; i<allSegments.length; i++) {
+            Vec3 wormPos = entity.getPosition(partialTicks);
+            Vec3 partPos = allParts[i].getPosition(partialTicks);
+            double xOffset = partPos.x-wormPos.x;
+            double yOffset = partPos.y-wormPos.y;
+            double zOffset = partPos.z-wormPos.z;
+//            System.out.println("segment " + i + ": " + allSegments[i].y);
+            // default position of the part is (0,24,0). See PartDefinition definitions above to see why
+            allSegments[i].setPos((float)(16f*xOffset), (float) (24-16f*(yOffset + allParts[i].getBbHeight()/2)),(float)(-16f*zOffset));
+//            System.out.println("segment " + i + ": " + allSegments[i].y);
+        }
 
     }
 }

@@ -1,5 +1,6 @@
 package net.jelly.abyss_mod.entity.multipart;
 
+import net.jelly.abyss_mod.entity.IK.AbstractIKSegment;
 import net.minecraft.client.renderer.entity.EnderDragonRenderer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
@@ -36,13 +37,15 @@ public class WormEntity extends WaterAnimal {
     private int trailPointer = -1;
     private boolean spawnTick = true;
 
+    Vec3 fabrikTarget = new Vec3(0,0,0);
+
     public WormEntity(EntityType entityType, Level level) {
         super(entityType, level);
-        tail1Part = new WormPartEntity(this, this, 1.1F, 0.5F);
-        tail2Part = new WormPartEntity(this, tail1Part, 1.1F, 0.5F);
-        tail3Part = new WormPartEntity(this, tail2Part, 1F, 0.5F);
-        tail4Part = new WormPartEntity(this, tail3Part, 0.8F, 0.5F);
-        tail5Part = new WormPartEntity(this, tail4Part, 0.6F, 0.5F);
+        tail1Part = new WormPartEntity(this, this, 0.5F, 0.5F);
+        tail2Part = new WormPartEntity(this, tail1Part, 0.5F, 0.5F);
+        tail3Part = new WormPartEntity(this, tail2Part, 0.5F, 0.5F);
+        tail4Part = new WormPartEntity(this, tail3Part, 0.5F, 0.5F);
+        tail5Part = new WormPartEntity(this, tail4Part, 0.5F, 0.5F);
         allParts = new WormPartEntity[]{tail1Part, tail2Part, tail3Part, tail4Part, tail5Part};
     }
 
@@ -67,6 +70,8 @@ public class WormEntity extends WaterAnimal {
 
     public void tick() {
         super.tick();
+        Player nearestPlayer = this.level().getNearestPlayer(this, 200);
+        if(nearestPlayer != null) fabrikTarget = nearestPlayer.position();
         this.tickMultipart();
     }
 
@@ -75,29 +80,94 @@ public class WormEntity extends WaterAnimal {
         this.targetSelector.addGoal(2, new NearestAttackableTargetGoal<>(this, Player.class, true));
     }
 
+    public void fabrikForward(Vec3 target) {
+        for (int i = allParts.length - 1; i >= 0; i--) {
+            WormPartEntity currentSegment = allParts[i];
+            Vec3 lastEndPos;
+            Vec3 nextRootPos;
+            Vec3 root = this.position();
+            if (i == 0) {
+                lastEndPos = root;
+            } else {
+                WormPartEntity lastSegment = allParts[i-1];
+                lastEndPos = lastSegment.getEndPos();
+            }
+
+            if (i == allParts.length - 1) {
+                nextRootPos = target;
+            }
+            else {
+                WormPartEntity nextSegment = allParts[i+1];
+                nextRootPos = nextSegment.getRootPos();
+            }
+
+            currentSegment.setPartDirection(nextRootPos.subtract(lastEndPos));
+            currentSegment.setEndPos(nextRootPos);
+        }
+    }
+
+    public void fabrikBackward(Vec3 target) {
+        for (int i = 0; i < allParts.length; i++) {
+            WormPartEntity currentSegment = allParts[i];
+            Vec3 lastEndPos;
+            Vec3 nextRootPos;
+            Vec3 root = this.position();
+            if (i == 0) {
+                lastEndPos = root;
+            } else {
+                WormPartEntity lastSegment = allParts[i-1];
+                lastEndPos = lastSegment.getEndPos();
+            }
+
+            if (i == allParts.length - 1) {
+                nextRootPos = target;
+            }
+            else {
+                WormPartEntity nextSegment = allParts[i+1];
+                nextRootPos = nextSegment.getRootPos();
+            }
+
+            currentSegment.setPartDirection(nextRootPos.subtract(lastEndPos));
+            currentSegment.setRootPos(lastEndPos);
+        }
+    }
 
     private void tickMultipart() {
-        Vec3[] avector3d = new Vec3[this.allParts.length];
-        for (int j = 0; j < this.allParts.length; ++j) {
-            avector3d[j] = new Vec3(this.allParts[j].getX(), this.allParts[j].getY(), this.allParts[j].getZ());
+        // if not possible to reach target
+        float totalLength = 0;
+        float distToTarget = (float) (fabrikTarget.subtract(position()).length());
+        for (int i = 0; i < allParts.length; i++) totalLength += allParts[i].getLength();
+        if (distToTarget >= totalLength) {
+            System.out.println("target too far, reaching");
+            Vec3 rootToTarget = fabrikTarget.subtract(position()).normalize();
+            for (int i = 0; i < allParts.length; i++) {
+                WormPartEntity currentSegment = allParts[i];
+                Vec3 lastEndPos;
+                Vec3 root = this.position();
+                if (i == 0) lastEndPos = root;
+                else {
+                    lastEndPos = allParts[i-1].getEndPos();
+                }
+
+                currentSegment.setPartDirection(rootToTarget);
+                currentSegment.setRootPos(lastEndPos);
+                System.out.println("segment " + i + ": " + lastEndPos);
+            }
+        }
+        else {
+            // if possible to reach target
+            // while head segment is not within tolerance range of target
+            float tolerance = 0.01f;
+            int fiterations = 0;
+            while (Math.abs(fabrikTarget.subtract(allParts[allParts.length - 1].getEndPos()).length()) > tolerance && fiterations <= 10) {
+                fabrikForward(fabrikTarget);
+                fabrikBackward(fabrikTarget);
+                fiterations++;
+            }
         }
 
-        for (int i=0; i<allParts.length; i++) {
-            WormPartEntity part = allParts[i];
-            float pOffsetX = 0;
-            float pOffsetY = i;
-            float pOffsetZ = 0;
-            part.setPos(this.getX() + pOffsetX, this.getY() + pOffsetY, this.getZ() + pOffsetZ);
-        }
+        for (int i = 0; i < allParts.length; i++) allParts[i].tick();
 
-        for (int l = 0; l < this.allParts.length; ++l) {
-            this.allParts[l].xo = avector3d[l].x;
-            this.allParts[l].yo = avector3d[l].y;
-            this.allParts[l].zo = avector3d[l].z;
-            this.allParts[l].xOld = avector3d[l].x;
-            this.allParts[l].yOld = avector3d[l].y;
-            this.allParts[l].zOld = avector3d[l].z;
-        }
     }
 
 
