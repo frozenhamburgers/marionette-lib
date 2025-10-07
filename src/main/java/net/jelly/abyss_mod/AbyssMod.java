@@ -1,12 +1,12 @@
 package net.jelly.abyss_mod;
 
 import com.mojang.logging.LogUtils;
-import net.jelly.abyss_mod.entity.IK.worm.WormControllerRenderer;
-import net.jelly.abyss_mod.entity.IK.worm.WormSegmentRenderer;
 import net.jelly.abyss_mod.entity.ModEntities;
-import net.jelly.abyss_mod.entity.multipart.WormRenderer;
+import net.jelly.abyss_mod.entity.examples.octopus.OctopusRenderer;
+import net.jelly.abyss_mod.entity.examples.worm.WormRenderer;
+import net.jelly.abyss_mod.entity.examples.wyvern.WyvernRenderer;
 import net.jelly.abyss_mod.item.ModItems;
-import net.jelly.abyss_mod.networking.PacketHandler;
+import net.jelly.abyss_mod.networking.ModMessages;
 import net.minecraft.client.renderer.entity.EntityRenderers;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.common.MinecraftForge;
@@ -60,7 +60,7 @@ public class AbyssMod
     private void commonSetup(final FMLCommonSetupEvent event)
     {
         event.enqueueWork(() -> {
-            PacketHandler.register(); // networking: HAS TO BE FIRST LINE HERE
+            ModMessages.register(); // networking: HAS TO BE FIRST LINE HERE
 //            AdvancementTriggerRegistry.init();
         });
     }
@@ -79,9 +79,9 @@ public class AbyssMod
         public static void onClientSetup(FMLClientSetupEvent event)
         {
             // register entity renderers
-            EntityRenderers.register(ModEntities.WORM_SEGMENT.get(), WormSegmentRenderer::new);
-            EntityRenderers.register(ModEntities.WORM_CONTROLLER.get(), WormControllerRenderer::new);
             EntityRenderers.register(ModEntities.WORM.get(), WormRenderer::new);
+            EntityRenderers.register(ModEntities.OCTOPUS.get(), OctopusRenderer::new);
+            EntityRenderers.register(ModEntities.WYVERN.get(), WyvernRenderer::new);
         }
     }
 }

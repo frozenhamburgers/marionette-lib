@@ -1,9 +1,9 @@
 package net.jelly.abyss_mod.entity;
 
 import net.jelly.abyss_mod.AbyssMod;
-import net.jelly.abyss_mod.entity.IK.worm.WormController;
-import net.jelly.abyss_mod.entity.IK.worm.WormSegment;
-import net.jelly.abyss_mod.entity.multipart.WormEntity;
+import net.jelly.abyss_mod.entity.examples.octopus.OctopusEntity;
+import net.jelly.abyss_mod.entity.examples.worm.WormEntity;
+import net.jelly.abyss_mod.entity.examples.wyvern.WyvernEntity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.MobCategory;
 import net.minecraftforge.eventbus.api.IEventBus;
@@ -15,21 +15,22 @@ public class ModEntities {
     public static final DeferredRegister<EntityType<?>> ENTITY_TYPES =
             DeferredRegister.create(ForgeRegistries.ENTITY_TYPES, AbyssMod.MODID);
 
-    public static final RegistryObject<EntityType<WormSegment>> WORM_SEGMENT = ENTITY_TYPES.register("worm_segment", () ->
-            EntityType.Builder.of(WormSegment::new, MobCategory.MISC)
-                    .sized(1f,1f)
-                    .clientTrackingRange(400)
-                    .build("worm_segment")
-    );
-    public static final RegistryObject<EntityType<WormController>> WORM_CONTROLLER = ENTITY_TYPES.register("worm_controller", () ->
-            EntityType.Builder.of(WormController::new, MobCategory.MISC)
-                    .sized(0.5f,0.5f)
-                    .build("worm_chain")
-    );
     public static final RegistryObject<EntityType<WormEntity>> WORM = ENTITY_TYPES.register("worm", () ->
             EntityType.Builder.of(WormEntity::new, MobCategory.MISC)
                     .sized(1.0f,1.0f)
                     .build("worm")
+    );
+
+    public static final RegistryObject<EntityType<OctopusEntity>> OCTOPUS = ENTITY_TYPES.register("octopus", () ->
+            EntityType.Builder.of(OctopusEntity::new, MobCategory.MISC)
+                    .sized(1.0f,1.0f)
+                    .build("octopus")
+    );
+
+    public static final RegistryObject<EntityType<WyvernEntity>> WYVERN = ENTITY_TYPES.register("wyvern", () ->
+            EntityType.Builder.of(WyvernEntity::new, MobCategory.MISC)
+                    .sized(1.0f,1.0f)
+                    .build("wyvern")
     );
 
     public static void register(IEventBus eventBus) {

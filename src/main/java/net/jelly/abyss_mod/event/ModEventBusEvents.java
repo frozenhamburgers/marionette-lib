@@ -2,7 +2,9 @@ package net.jelly.abyss_mod.event;
 
 import net.jelly.abyss_mod.AbyssMod;
 import net.jelly.abyss_mod.entity.ModEntities;
-import net.jelly.abyss_mod.entity.multipart.WormEntity;
+import net.jelly.abyss_mod.entity.examples.octopus.OctopusEntity;
+import net.jelly.abyss_mod.entity.examples.worm.WormEntity;
+import net.jelly.abyss_mod.entity.examples.wyvern.WyvernEntity;
 import net.jelly.abyss_mod.item.ModItems;
 import net.minecraft.world.item.CreativeModeTabs;
 import net.minecraftforge.event.BuildCreativeModeTabContentsEvent;
@@ -17,6 +19,8 @@ public class ModEventBusEvents {
     @SubscribeEvent
     public static void registerAttributes(EntityAttributeCreationEvent event) {
         event.put(ModEntities.WORM.get(), WormEntity.createAttributes().build());
+        event.put(ModEntities.OCTOPUS.get(), OctopusEntity.createAttributes().build());
+        event.put(ModEntities.WYVERN.get(), WyvernEntity.createAttributes().build());
     }
 
     // creative mode tabs
