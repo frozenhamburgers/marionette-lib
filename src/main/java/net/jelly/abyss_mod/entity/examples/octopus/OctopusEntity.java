@@ -1,7 +1,7 @@
 package net.jelly.abyss_mod.entity.examples.octopus;
 
 import net.jelly.abyss_mod.utility.AbstractPartEntity;
-import net.jelly.abyss_mod.utility.FabrikAnimatable;
+import net.jelly.abyss_mod.utility.ProceduralAnimatable;
 import net.jelly.abyss_mod.utility.FabrikAnimator;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
@@ -13,7 +13,9 @@ import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.entity.PartEntity;
 import org.jetbrains.annotations.Nullable;
 
-public class OctopusEntity extends WaterAnimal implements FabrikAnimatable {
+import java.util.ArrayList;
+
+public class OctopusEntity extends WaterAnimal implements ProceduralAnimatable {
     private final OctopusPartEntity[] allParts;
     private OctopusPartEntity[] tentacleParts1;
     private OctopusPartEntity[] tentacleParts2;
@@ -67,8 +69,11 @@ public class OctopusEntity extends WaterAnimal implements FabrikAnimatable {
     }
 
     @Override
-    public FabrikAnimator getAnimator() {
-        return null;
+    public ArrayList<FabrikAnimator> getAnimators() {
+        ArrayList<FabrikAnimator> animators = new ArrayList<>();
+        animators.add(animator1);
+        animators.add(animator2);
+        return animators;
     }
     @Override
     public boolean isMultipartEntity() {
@@ -93,7 +98,6 @@ public class OctopusEntity extends WaterAnimal implements FabrikAnimatable {
         super.tick();
         if(Math.abs(goal1.subtract(target1).length()) <= 0.5) {
             goal1 = findNextGoal(tentacleParts1);
-            System.out.println("goal reached");
         }
         if(Math.abs(goal2.subtract(target2).length()) <= 0.5) goal2 = findNextGoal(tentacleParts2);
         target1 = target1.add(goal1.subtract(target1).normalize().scale(0.5));
@@ -101,8 +105,7 @@ public class OctopusEntity extends WaterAnimal implements FabrikAnimatable {
 
         animator1.setFabrikTarget(target1);
         animator2.setFabrikTarget(target2);
-        animator1.tickMultipart();
-        animator2.tickMultipart();
+        tickMultipart();
     }
 
     private Vec3 findNextGoal(OctopusPartEntity[] tentacle) {
@@ -116,7 +119,6 @@ public class OctopusEntity extends WaterAnimal implements FabrikAnimatable {
             float distToTarget = (float) (proposedTarget.subtract(rootPos).length());
 
             if (distToTarget < totalLength && proposedTarget.y > this.position().y+3) {
-                System.out.println(proposedTarget);
                 return proposedTarget;
             }
         }

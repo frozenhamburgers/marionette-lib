@@ -3,7 +3,7 @@ package net.jelly.abyss_mod.entity.examples.wyvern;
 import net.jelly.abyss_mod.networking.ModMessages;
 import net.jelly.abyss_mod.networking.MultipartEntityMessage;
 import net.jelly.abyss_mod.utility.AbstractPartEntity;
-import net.jelly.abyss_mod.utility.FabrikAnimatable;
+import net.jelly.abyss_mod.utility.ProceduralAnimatable;
 import net.jelly.abyss_mod.utility.FabrikAnimator;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
@@ -16,7 +16,9 @@ import net.minecraft.world.phys.AABB;
 import net.minecraftforge.entity.PartEntity;
 import org.jetbrains.annotations.Nullable;
 
-public class WyvernPartEntity extends AbstractPartEntity<WyvernEntity> implements FabrikAnimatable  {
+import java.util.ArrayList;
+
+public class WyvernPartEntity extends AbstractPartEntity<WyvernEntity> implements ProceduralAnimatable {
     private EntityDimensions size;
     private final WyvernLegPartEntity[] allParts;
     FabrikAnimator animator;
@@ -34,6 +36,13 @@ public class WyvernPartEntity extends AbstractPartEntity<WyvernEntity> implement
         WyvernLegPartEntity tail5Part = new WyvernLegPartEntity(this, 1F, 1F, 0.5f);
         allParts = new WyvernLegPartEntity[]{tail1Part, tail2Part, tail3Part, tail4Part, tail5Part};
         animator = new FabrikAnimator(this, allParts);
+    }
+
+    @Override
+    public ArrayList<FabrikAnimator> getAnimators() {
+        ArrayList<FabrikAnimator> animators = new ArrayList<>();
+        animators.add(animator);
+        return animators;
     }
 
     public EntityDimensions getDimensions(Pose pose) {
@@ -80,11 +89,6 @@ public class WyvernPartEntity extends AbstractPartEntity<WyvernEntity> implement
     }
 
     @Override
-    public FabrikAnimator getAnimator() {
-        return animator;
-    }
-
-    @Override
     public @Nullable PartEntity<?>[] getParts() {
         return allParts;
     }
@@ -101,7 +105,7 @@ public class WyvernPartEntity extends AbstractPartEntity<WyvernEntity> implement
     public void tick() {
         super.tick();
         Player nearestPlayer = this.level().getNearestPlayer(this, 200);
-        if(nearestPlayer != null) setFabrikTarget(nearestPlayer.position());
+        if(nearestPlayer != null) animator.setFabrikTarget(nearestPlayer.position());
         tickMultipart();
     }
 }

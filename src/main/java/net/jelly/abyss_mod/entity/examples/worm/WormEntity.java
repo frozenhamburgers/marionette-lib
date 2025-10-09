@@ -1,8 +1,6 @@
 package net.jelly.abyss_mod.entity.examples.worm;
 
-import net.jelly.abyss_mod.networking.ModMessages;
-import net.jelly.abyss_mod.networking.MultipartEntityMessage;
-import net.jelly.abyss_mod.utility.FabrikAnimatable;
+import net.jelly.abyss_mod.utility.ProceduralAnimatable;
 import net.jelly.abyss_mod.utility.FabrikAnimator;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
@@ -19,7 +17,9 @@ import net.minecraft.world.level.Level;
 import net.minecraftforge.entity.PartEntity;
 import org.jetbrains.annotations.Nullable;
 
-public class WormEntity extends WaterAnimal implements FabrikAnimatable {
+import java.util.ArrayList;
+
+public class WormEntity extends WaterAnimal implements ProceduralAnimatable {
     private final WormPartEntity[] allParts;
     FabrikAnimator animator;
 
@@ -40,8 +40,10 @@ public class WormEntity extends WaterAnimal implements FabrikAnimatable {
     }
 
     @Override
-    public FabrikAnimator getAnimator() {
-        return animator;
+    public ArrayList<FabrikAnimator> getAnimators() {
+        ArrayList<FabrikAnimator> animators = new ArrayList<>();
+        animators.add(animator);
+        return animators;
     }
     @Override
     public boolean isMultipartEntity() {
@@ -65,7 +67,7 @@ public class WormEntity extends WaterAnimal implements FabrikAnimatable {
     public void tick() {
         super.tick();
         Player nearestPlayer = this.level().getNearestPlayer(this, 200);
-        if(nearestPlayer != null) setFabrikTarget(nearestPlayer.position());
+        if(nearestPlayer != null) animator.setFabrikTarget(nearestPlayer.position());
         tickMultipart();
     }
 

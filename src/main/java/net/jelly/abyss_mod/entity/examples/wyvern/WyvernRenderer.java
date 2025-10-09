@@ -11,7 +11,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.monster.Phantom;
 
 public class WyvernRenderer extends MobRenderer<WyvernEntity, WyvernModel> {
-    private static final ResourceLocation TEXTURE = new ResourceLocation("abyss_mod:textures/entity/worm.png");
+    private static final ResourceLocation TEXTURE = new ResourceLocation("abyss_mod:textures/entity/wyvern.png");
     public static final ModelLayerLocation WYVERN_LAYER = new ModelLayerLocation(
             new ResourceLocation(AbyssMod.MODID, "wyvern_layer"), "main");
 
