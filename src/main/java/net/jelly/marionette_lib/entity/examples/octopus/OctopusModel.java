@@ -1,11 +1,11 @@
 package net.jelly.marionette_lib.entity.examples.octopus;
 
-import net.jelly.marionette_lib.utility.MultipartModel;
+import net.jelly.marionette_lib.utility.MarionetteModel;
 import net.minecraft.client.model.geom.ModelPart;
 import net.minecraft.client.model.geom.PartPose;
 import net.minecraft.client.model.geom.builders.*;
 
-public class OctopusModel extends MultipartModel<OctopusEntity> {
+public class OctopusModel extends MarionetteModel<OctopusEntity> {
 
     public static LayerDefinition createBodyLayer() {
         MeshDefinition meshdefinition = new MeshDefinition();

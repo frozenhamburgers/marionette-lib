@@ -1,12 +1,12 @@
 package net.jelly.marionette_lib.entity.examples.worm;
 
-import net.jelly.marionette_lib.utility.ProceduralAnimatable;
-import net.jelly.marionette_lib.utility.FabrikAnimator;
+import net.jelly.marionette_lib.utility.Limb;
+import net.jelly.marionette_lib.utility.Marionette;
+import net.jelly.marionette_lib.utility.MarionettePart;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
-import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
@@ -15,62 +15,46 @@ import net.minecraft.world.entity.animal.WaterAnimal;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import net.minecraftforge.entity.PartEntity;
-import org.jetbrains.annotations.Nullable;
 
-import java.util.ArrayList;
+import java.util.List;
 
-public class WormEntity extends WaterAnimal implements ProceduralAnimatable {
-    private final WormPartEntity[] allParts;
-    FabrikAnimator animator;
+public class WormEntity extends WaterAnimal implements Marionette {
+    private final Limb<MarionettePart<WormEntity>> tail;
 
     public WormEntity(EntityType entityType, Level level) {
         super(entityType, level);
-        WormPartEntity tail1Part = new WormPartEntity(this, 0.5F, 0.5F, 2f/8);
-        WormPartEntity tail2Part = new WormPartEntity(this, 0.5F, 0.5F, 2f/8);
-        WormPartEntity tail3Part = new WormPartEntity(this, 0.5F, 0.5F, 2f/8);
-        WormPartEntity tail4Part = new WormPartEntity(this, 0.5F, 0.5F, 2f/8);
-        WormPartEntity tail5Part = new WormPartEntity(this, 0.5F, 0.5F, 2f/8);
-        WormPartEntity tail6Part = new WormPartEntity(this, 0.5F, 0.5F, 2f/8);
-        WormPartEntity tail7Part = new WormPartEntity(this, 0.5F, 0.5F, 2f/8);
-        WormPartEntity tail8Part = new WormPartEntity(this, 0.5F, 0.5F, 2f/8);
-        WormPartEntity tail9Part = new WormPartEntity(this, 0.5F, 0.5F, 2f/8);
-        WormPartEntity tail10Part = new WormPartEntity(this, 0.5F, 0.5F, 2f/8);
-        allParts = new WormPartEntity[]{tail1Part, tail2Part, tail3Part, tail4Part, tail5Part, tail6Part, tail7Part, tail8Part, tail9Part, tail10Part};
-        animator = new FabrikAnimator(this, allParts);
+        tail = Limb.builder(this)
+                .segments(10, 0.5f, 0.5f, 2f / 8)
+                .build();
     }
 
     @Override
-    public ArrayList<FabrikAnimator> getAnimators() {
-        ArrayList<FabrikAnimator> animators = new ArrayList<>();
-        animators.add(animator);
-        return animators;
+    public List<Limb<?>> getLimbs() {
+        return List.of(tail);
     }
+
     @Override
     public boolean isMultipartEntity() {
         return true;
     }
 
     @Override
-    public @Nullable PartEntity<?>[] getParts() {
-        return allParts;
+    public PartEntity<?>[] getParts() {
+        return getMarionetteParts();
     }
 
-    public void remove(Entity.RemovalReason removalReason) {
+    @Override
+    public void remove(RemovalReason removalReason) {
         super.remove(removalReason);
-        if (allParts != null) {
-            for (PartEntity part : allParts) {
-                part.remove(RemovalReason.KILLED);
-            }
-        }
+        removeMarionette(removalReason);
     }
 
     public void tick() {
         super.tick();
         Player nearestPlayer = this.level().getNearestPlayer(this, 200);
-        if(nearestPlayer != null) animator.setFabrikTarget(nearestPlayer.position());
-        tickMultipart();
+        if (nearestPlayer != null) tail.animator().setFabrikTarget(nearestPlayer.position());
+        tickMarionette();
     }
-
 
     public static AttributeSupplier.Builder createAttributes() {
         return Animal.createLivingAttributes()
@@ -84,7 +68,7 @@ public class WormEntity extends WaterAnimal implements ProceduralAnimatable {
 
     @Override
     protected InteractionResult mobInteract(Player pPlayer, InteractionHand pHand) {
-        if(this.level().isClientSide) Minecraft.getInstance().player.sendSystemMessage(Component.literal("squelch client"));
+        if (this.level().isClientSide) Minecraft.getInstance().player.sendSystemMessage(Component.literal("squelch client"));
         else Minecraft.getInstance().player.sendSystemMessage(Component.literal("squelch server"));
         return super.mobInteract(pPlayer, pHand);
     }

@@ -1,11 +1,11 @@
 package net.jelly.marionette_lib.entity.examples.wyvern;
 
-import net.jelly.marionette_lib.utility.MultipartModel;
+import net.jelly.marionette_lib.utility.MarionetteModel;
 import net.minecraft.client.model.geom.ModelPart;
 import net.minecraft.client.model.geom.PartPose;
 import net.minecraft.client.model.geom.builders.*;
 
-public class WyvernModel extends MultipartModel<WyvernEntity> {
+public class WyvernModel extends MarionetteModel<WyvernEntity> {
 
     public static LayerDefinition createBodyLayer() {
         MeshDefinition meshdefinition = new MeshDefinition();
