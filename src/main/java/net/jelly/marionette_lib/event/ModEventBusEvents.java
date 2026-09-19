@@ -3,6 +3,7 @@ package net.jelly.marionette_lib.event;
 import net.jelly.marionette_lib.MarionetteMod;
 import net.jelly.marionette_lib.entity.ModEntities;
 import net.jelly.marionette_lib.entity.examples.octopus.OctopusEntity;
+import net.jelly.marionette_lib.entity.examples.tentacle.TentacleEntity;
 import net.jelly.marionette_lib.entity.examples.worm.WormEntity;
 import net.jelly.marionette_lib.entity.examples.wyvern.WyvernEntity;
 import net.minecraftforge.event.entity.EntityAttributeCreationEvent;
@@ -18,6 +19,8 @@ public class ModEventBusEvents {
         event.put(ModEntities.WORM.get(), WormEntity.createAttributes().build());
         event.put(ModEntities.OCTOPUS.get(), OctopusEntity.createAttributes().build());
         event.put(ModEntities.WYVERN.get(), WyvernEntity.createAttributes().build());
+        event.put(ModEntities.TENTACLE.get(), TentacleEntity.createAttributes().build());
+
     }
 
 }

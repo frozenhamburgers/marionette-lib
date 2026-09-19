@@ -1,0 +1,15 @@
+{
+  "name": "marionette-blockbench-plugin",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "Blockbench plugin for authoring Marionette rigs (Minecraft Forge 1.20.1)",
+  "scripts": {
+    "build": "node build.mjs",
+    "watch": "node build.mjs --watch",
+    "test": "node --test test/"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2"
+  }
+}

@@ -1,6 +1,8 @@
 package net.jelly.marionette_lib.utility;
 
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.entity.PartEntity;
 
 import java.util.ArrayList;
@@ -13,10 +15,6 @@ import java.util.List;
  * and {@code remove()} to the defaults below itself (Forge's {@code Entity} already
  * defines concrete versions of those methods, which win over interface defaults):
  * <pre>{@code
- * @Override public boolean isMultipartEntity() { return true; }
- * @Override public PartEntity<?>[] getParts() { return getMarionetteParts(); }
- * @Override public void remove(RemovalReason reason) { super.remove(reason); removeMarionette(reason); }
- * }</pre>
  */
 public interface Marionette {
     List<Limb<?>> getLimbs();
@@ -35,5 +33,17 @@ public interface Marionette {
 
     default void removeMarionette(Entity.RemovalReason reason) {
         for (PartEntity<?> part : getMarionetteParts()) part.remove(reason);
+    }
+
+    /**
+     * Bounding box covering {@code entity} and all its parts. Override a renderer's
+     * {@code getBoundingBoxForCulling} to return this
+     */
+    default AABB getMarionetteBoundingBoxForCulling(Entity entity) {
+        AABB box = entity.getBoundingBox();
+        for (PartEntity<?> part : getMarionetteParts()) {
+            box = box.minmax(part.getBoundingBox());
+        }
+        return box;
     }
 }

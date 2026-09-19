@@ -3,6 +3,9 @@ package net.jelly.marionette_lib.event;
 import net.jelly.marionette_lib.MarionetteMod;
 import net.jelly.marionette_lib.entity.examples.octopus.OctopusModel;
 import net.jelly.marionette_lib.entity.examples.octopus.OctopusRenderer;
+import net.jelly.marionette_lib.entity.examples.tentacle.TentacleEntity;
+import net.jelly.marionette_lib.entity.examples.tentacle.TentacleModel;
+import net.jelly.marionette_lib.entity.examples.tentacle.TentacleRenderer;
 import net.jelly.marionette_lib.entity.examples.worm.WormModel;
 import net.jelly.marionette_lib.entity.examples.worm.WormRenderer;
 import net.jelly.marionette_lib.entity.examples.wyvern.WyvernModel;
@@ -44,6 +47,8 @@ public class ClientEvents {
             event.registerLayerDefinition(WormRenderer.WORM_LAYER, WormModel::createBodyLayer);
             event.registerLayerDefinition(OctopusRenderer.OCTOPUS_LAYER, OctopusModel::createBodyLayer);
             event.registerLayerDefinition(WyvernRenderer.WYVERN_LAYER, WyvernModel::createBodyLayer);
+            event.registerLayerDefinition(TentacleRenderer.TENTACLE_LAYER, TentacleModel::createBodyLayer);
+
         }
 
     }
