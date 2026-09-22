@@ -50,6 +50,7 @@ public class Limb<T extends MarionettePart<?>> {
         private boolean followRootOnly = false;
         private Vec3 root = null;
         private Vec3 primeDirection = null;
+        private Vec3 bodyPrimeDirection = null;
 
         private Builder(P parent, PartFactory<P, T> factory) {
             this.parent = parent;
@@ -85,6 +86,12 @@ public class Limb<T extends MarionettePart<?>> {
             return this;
         }
 
+        /** See {@link FabrikAnimator#setBodyPrimeDirection(Vec3)} */
+        public Builder<P, T> bodyPrimeDirection(Vec3 bodyPrimeDirection) {
+            this.bodyPrimeDirection = bodyPrimeDirection;
+            return this;
+        }
+
         @SuppressWarnings("unchecked")
         public Limb<T> build() {
             if (parts.isEmpty()) throw new IllegalStateException("Limb must have at least one segment");
@@ -93,6 +100,7 @@ public class Limb<T extends MarionettePart<?>> {
             animator.setFollowRootOnly(followRootOnly);
             if (root != null) animator.setRoot(root);
             if (primeDirection != null) animator.setPrimeDirection(primeDirection);
+            if (bodyPrimeDirection != null) animator.setBodyPrimeDirection(bodyPrimeDirection);
             return new Limb<>(array, animator);
         }
     }

@@ -1,5 +1,6 @@
 package net.jelly.marionette_lib.utility;
 
+import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
 
@@ -14,6 +15,7 @@ public class FabrikAnimator {
     private boolean followRootOnly = false;
     private Vec3 root;
     private Vec3 primeDirection = null;
+    private Vec3 bodyPrimeDirection = null;
 
     public FabrikAnimator(Entity owner, MarionettePart<?>[] allParts) {
         this.owner = owner;
@@ -49,14 +51,39 @@ public class FabrikAnimator {
     /** re-primes along {@code direction} before every solve, see {@link #primeMultipart(Vec3)}. clear with {@link #clearPrimeDirection()} */
     public void setPrimeDirection(Vec3 direction) {
         this.primeDirection = direction == null ? null : direction.normalize();
+        this.bodyPrimeDirection = null;
     }
 
     public Vec3 getPrimeDirection() {
         return primeDirection;
     }
 
+    /**
+     * Same as {@link #setPrimeDirection(Vec3)} but {@code direction} is read in the owner's own frame, +Z forward,
+     * and rotated by its yaw before each solve, so the bias follows the entity around instead of pointing at a fixed
+     * compass heading. This is what a direction authored in Blockbench means, since a rig there has no yaw.
+     * <p>
+     * Yaw only. Any other axis, e.g. pitch on a flyer, MUST be folded into the vector yourself, per tick, via
+     * {@link #setPrimeDirection(Vec3)}.
+     */
+    public void setBodyPrimeDirection(Vec3 direction) {
+        this.bodyPrimeDirection = direction == null ? null : direction.normalize();
+        this.primeDirection = null;
+    }
+
+    public Vec3 getBodyPrimeDirection() {
+        return bodyPrimeDirection;
+    }
+
     public void clearPrimeDirection() {
         this.primeDirection = null;
+        this.bodyPrimeDirection = null;
+    }
+
+    // -yaw matches Entity.calculateViewVector, which builds the same rotation by hand
+    protected Vec3 resolvePrimeDirection() {
+        if (bodyPrimeDirection != null) return bodyPrimeDirection.yRot(-owner.getYRot() * Mth.DEG_TO_RAD);
+        return primeDirection;
     }
 
     protected Vec3 root() {
@@ -144,7 +171,8 @@ public class FabrikAnimator {
     }
 
     public void tickMultipart() {
-        if (primeDirection != null) primeMultipart(primeDirection);
+        Vec3 prime = resolvePrimeDirection();
+        if (prime != null) primeMultipart(prime);
 
         float totalLength = 0;
         float distToTarget = (float) (fabrikTarget.subtract(root()).length());
