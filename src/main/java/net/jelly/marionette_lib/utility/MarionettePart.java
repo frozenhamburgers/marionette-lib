@@ -3,6 +3,7 @@ package net.jelly.marionette_lib.utility;
 import net.jelly.marionette_lib.networking.ModMessages;
 import net.jelly.marionette_lib.networking.MultipartEntityMessage;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.util.Mth;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.damagesource.DamageSource;
@@ -149,6 +150,39 @@ public class MarionettePart<T extends Entity> extends PartEntity<T> {
 
     public void setPartDirection(Vec3 direction) {
         this.direction = direction.normalize();
+    }
+
+    /** yaw of {@link #getPartDirection()}, see {@link #partToWorld(Vec3)} */
+    public float partYaw() {
+        Vec3 dir = direction.normalize();
+        return (float) Math.atan2(dir.x, dir.z);
+    }
+
+    /** pitch of {@link #getPartDirection()}, see {@link #partToWorld(Vec3)} */
+    public float partPitch() {
+        Vec3 dir = direction.normalize();
+        return (float) Math.asin(Mth.clamp(dir.y, -1, 1));
+    }
+
+    /**
+     * Part space to world. Part space is +Z along {@link #getPartDirection()}, with roll fixed at 0
+     * and +Y up, which is the frame {@link MarionetteModel} renders the part's geometry in for now
+     * Single definition of part space.
+     * <p>
+     * A part carries a direction and no roll, so that last degree of freedom has to be pinned by some
+     * convention, since roll 0 is singular where the direction is vertical, yaw jumps as the direction
+     * crosses +Y. A {@code local} with a component perpendicular to the axis will thus swing
+     * around on a near-vertical part, which is acceptable for now
+     * Purely axial offsets, {@code (0, 0, z)}, are immune.
+     */
+    public Vec3 partToWorld(Vec3 local) {
+        // Vec3.xRot(a) is Rx(-a) while Vec3.yRot(a) is Ry(a), so pitch is not negated here
+        return local.xRot(partPitch()).yRot(partYaw());
+    }
+
+    /** inverse of {@link #partToWorld(Vec3)} */
+    public Vec3 worldToPart(Vec3 world) {
+        return world.yRot(-partYaw()).xRot(-partPitch());
     }
 
     public Vec3 getRootPos() {

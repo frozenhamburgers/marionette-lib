@@ -7,6 +7,7 @@ import net.minecraft.client.model.geom.ModelPart;
 import net.minecraft.client.model.geom.builders.LayerDefinition;
 import net.minecraft.client.model.geom.builders.MeshDefinition;
 import net.minecraft.client.model.geom.builders.PartDefinition;
+import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.entity.PartEntity;
@@ -61,11 +62,11 @@ public abstract class MarionetteModel<T extends Entity> extends EntityModel<T> {
         float partialTicks = ageInTicks - entity.tickCount;
         for (int i = 0; i < allSegments.length; i++) {
             MarionettePart<?> part = (MarionettePart<?>) allParts[i];
-            Vec3 dirVec = part.getPartDirection().normalize();
 
-            float yaw = (float) (Math.atan2(-dirVec.x, dirVec.z));
-            float pitch = (float) (Math.asin(dirVec.y));
-            allSegments[i].setRotation(-pitch, yaw, 0f);
+            // read through the same world-to-model mapping setPos uses below, (x, -y, -z), so the part's
+            // local +Z lands on that image of its direction. taking the angles off the direction as is,
+            // which is what this did before, pointed every segment's geometry back down its own axis
+            allSegments[i].setRotation(part.partPitch(), Mth.PI - part.partYaw(), 0f);
 
             Vec3 entityPos = entity.getPosition(partialTicks);
             Vec3 partPos = part.getPosition(partialTicks);
