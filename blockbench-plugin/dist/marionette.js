@@ -10,6 +10,8 @@
   var DEFAULT_BONE_WIDTH = 2;
   var UNITS_PER_BLOCK = 16;
   var PLUGIN_VERSION = "0.3.0";
+  var TARGET_FABRIK = "fabrik";
+  var TARGET_PRIME = "prime";
 
   // src/format.js
   function baseFlags() {
@@ -97,15 +99,35 @@
     }));
     return overrides;
   }
+  function registerTargetProperty() {
+    return new Property(NullObject, "enum", "marionette_target", {
+      default: TARGET_FABRIK,
+      values: [TARGET_FABRIK, TARGET_PRIME],
+      condition: { formats: [FORMAT_ID] },
+      label: "Marionette target",
+      inputs: {
+        element_panel: {
+          input: {
+            label: "Marionette target",
+            type: "select",
+            options: {
+              [TARGET_FABRIK]: "FABRIK target (chain reaches for it)",
+              [TARGET_PRIME]: "Prime target (biases which way it folds)"
+            }
+          }
+        }
+      }
+    });
+  }
   function installFormat() {
     const format = registerFormat();
-    const property = registerRoleProperty();
+    const properties = [registerRoleProperty(), registerTargetProperty()];
     const overrides = registerBehaviorOverrides();
     return {
       format,
       teardown() {
         for (const override of overrides) override.delete();
-        property.delete();
+        for (const property of properties) property.delete();
         format.delete();
       }
     };
@@ -114,7 +136,7 @@
   // src/geometry.js
   var DEG = Math.PI / 180;
   function matrixZYX(rotation) {
-    const [rx, ry, rz] = rotation.map((d) => d * DEG);
+    const [rx, ry, rz] = rotation.map((d2) => d2 * DEG);
     const cx = Math.cos(rx), sx = Math.sin(rx);
     const cy = Math.cos(ry), sy = Math.sin(ry);
     const cz = Math.cos(rz), sz = Math.sin(rz);
@@ -291,9 +313,12 @@
     ]);
   }
   function normalizeQuaternion(q) {
-    const d = Math.hypot(q[0], q[1], q[2], q[3]);
-    if (!d) return [0, 0, 0, 1];
-    return [q[0] / d, q[1] / d, q[2] / d, q[3] / d];
+    const d2 = Math.hypot(q[0], q[1], q[2], q[3]);
+    if (!d2) return [0, 0, 0, 1];
+    return [q[0] / d2, q[1] / d2, q[2] / d2, q[3] / d2];
+  }
+  function worldDirection(direction) {
+    return [-direction[0] + 0, direction[1] + 0, -direction[2] + 0];
   }
 
   // src/roles.js
@@ -418,6 +443,9 @@
       current = current.parent;
     }
     return chain;
+  }
+  function targetTypeOf(node) {
+    return node && node.marionette_target || TARGET_FABRIK;
   }
 
   // src/invariants.js
@@ -993,6 +1021,325 @@
     };
   }
 
+  // src/fabrik.js
+  var TOLERANCE = 0.01;
+  var MAX_ITERATIONS = 100;
+  function normalize(v) {
+    const d2 = Math.hypot(v[0], v[1], v[2]);
+    if (d2 < 1e-4) return [0, 0, 0];
+    return [v[0] / d2, v[1] / d2, v[2] / d2];
+  }
+  function subtract(a, b) {
+    return [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+  }
+  function add(a, b) {
+    return [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+  }
+  function scale(v, factor) {
+    return [v[0] * factor, v[1] * factor, v[2] * factor];
+  }
+  function distance(a, b) {
+    return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+  }
+  function rootPos(part) {
+    return subtract(part.position, scale(part.direction, part.length / 2));
+  }
+  function endPos(part) {
+    return add(part.position, scale(part.direction, part.length / 2));
+  }
+  function setRootPos(part, root) {
+    part.position = add(root, scale(part.direction, part.length / 2));
+  }
+  function setEndPos(part, end) {
+    part.position = subtract(end, scale(part.direction, part.length / 2));
+  }
+  function setDirection(part, vector) {
+    part.direction = normalize(vector);
+  }
+  function createChain(lengths, root, directions) {
+    const parts = lengths.map((length, i) => ({
+      length,
+      direction: directions && directions[i] ? normalize(directions[i]) : [0, 0, 1],
+      position: [0, 0, 0]
+    }));
+    const chain = { parts, root: root.slice(), followRootOnly: false, primeDirection: null };
+    layOutFrom(chain, null);
+    return chain;
+  }
+  function layOutFrom(chain, direction) {
+    let lastEnd = chain.root;
+    for (const part of chain.parts) {
+      if (direction) setDirection(part, direction);
+      setRootPos(part, lastEnd);
+      lastEnd = endPos(part);
+    }
+  }
+  function fabrikForward(chain, target) {
+    const { parts } = chain;
+    for (let i = parts.length - 1; i >= 0; i--) {
+      const part = parts[i];
+      const lastEnd = i === 0 ? chain.root : endPos(parts[i - 1]);
+      const nextRoot = i === parts.length - 1 ? target : rootPos(parts[i + 1]);
+      setDirection(part, subtract(nextRoot, lastEnd));
+      setEndPos(part, nextRoot);
+    }
+  }
+  function fabrikBackward(chain, target) {
+    const { parts } = chain;
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
+      const lastEnd = i === 0 ? chain.root : endPos(parts[i - 1]);
+      let nextRoot;
+      if (i === parts.length - 1) {
+        nextRoot = chain.followRootOnly ? endPos(part) : target;
+      } else {
+        nextRoot = rootPos(parts[i + 1]);
+      }
+      setDirection(part, subtract(nextRoot, lastEnd));
+      setRootPos(part, lastEnd);
+    }
+  }
+  function solve(chain, target) {
+    if (chain.primeDirection) layOutFrom(chain, chain.primeDirection);
+    const totalLength = chain.parts.reduce((sum, part) => sum + part.length, 0);
+    const distToTarget = distance(target, chain.root);
+    if (distToTarget >= totalLength && !chain.followRootOnly) {
+      layOutFrom(chain, subtract(target, chain.root));
+      return 0;
+    }
+    let iterations = 0;
+    do {
+      if (!chain.followRootOnly) fabrikForward(chain, target);
+      fabrikBackward(chain, target);
+      iterations++;
+    } while (!chain.followRootOnly && distance(target, endPos(chain.parts[chain.parts.length - 1])) > TOLERANCE && iterations < MAX_ITERATIONS);
+    return iterations;
+  }
+  function jointsOf(chain) {
+    return chain.parts.map(rootPos);
+  }
+
+  // src/simulate.js
+  var IDENTITY = { position: [0, 0, 0], quaternion: [0, 0, 0, 1] };
+  function isTarget(node) {
+    return typeof NullObject !== "undefined" && node instanceof NullObject;
+  }
+  function modelTransformOf(node) {
+    const ancestors = [];
+    let current = node;
+    while (isGroup(current)) {
+      ancestors.unshift(current);
+      current = current.parent;
+    }
+    let position = [0, 0, 0];
+    let quaternion = [0, 0, 0, 1];
+    let parentOrigin = [0, 0, 0];
+    for (const group of ancestors) {
+      const local = subtract(group.origin, parentOrigin);
+      position = add(position, applyQuaternion(quaternion, local));
+      quaternion = quaternionMultiply(quaternion, quaternionFromRotation(group.rotation));
+      parentOrigin = group.origin;
+    }
+    return { position, quaternion };
+  }
+  function findTarget(limb, type) {
+    let found = null;
+    (function walk(node) {
+      if (found || !node.children) return;
+      for (const child of node.children) {
+        if (found) return;
+        if (isTarget(child) && targetTypeOf(child) === type) {
+          found = child;
+          return;
+        }
+        walk(child);
+      }
+    })(limb);
+    return found;
+  }
+  function targetOf(limb) {
+    return findTarget(limb, TARGET_FABRIK);
+  }
+  function primeTargetOf(limb) {
+    return findTarget(limb, TARGET_PRIME);
+  }
+  function targetPosition(target) {
+    const parent = modelTransformOf(target.parent);
+    return add(parent.position, applyQuaternion(parent.quaternion, target.position));
+  }
+  function primeDirectionOf(description, root) {
+    if (!description.primeTarget) return null;
+    const position = scale(targetPosition(description.primeTarget), 1 / UNITS_PER_BLOCK);
+    const direction = normalize(subtract(position, root));
+    return direction[0] || direction[1] || direction[2] ? direction : null;
+  }
+  function describeLimb(limb) {
+    const segments = chainOf(limb).filter((segment) => lengthOf(segment) > 0);
+    if (!segments.length) return null;
+    const target = targetOf(limb);
+    if (!target) return null;
+    return {
+      limb,
+      segments,
+      target,
+      primeTarget: primeTargetOf(limb),
+      lengths: segments.map(lengthOf)
+    };
+  }
+  function stillMatches(entry, description) {
+    if (entry.segments.length !== description.segments.length) return false;
+    if (entry.target !== description.target) return false;
+    if (entry.primeTarget !== description.primeTarget) return false;
+    return entry.segments.every(
+      (segment, i) => segment === description.segments[i] && entry.chain.parts[i].length === description.lengths[i] / UNITS_PER_BLOCK
+    );
+  }
+  function buildChain(description) {
+    const root = scale(modelTransformOf(description.segments[0]).position, 1 / UNITS_PER_BLOCK);
+    const directions = description.segments.map(
+      (segment) => applyQuaternion(modelTransformOf(segment).quaternion, [0, 0, 1])
+    );
+    return createChain(
+      description.lengths.map((length) => length / UNITS_PER_BLOCK),
+      root,
+      directions
+    );
+  }
+  var Simulation = class {
+    constructor() {
+      this.running = false;
+      this.entries = /* @__PURE__ */ new Map();
+      this.snapshots = /* @__PURE__ */ new Map();
+      this.frame = null;
+    }
+    start() {
+      if (this.running) return;
+      this.running = true;
+      this.tick = this.tick.bind(this);
+      this.frame = requestAnimationFrame(this.tick);
+    }
+    // always restores even if the loop never started
+    // guarding the whole method on 'running' would skip the restore a case that matters (posed the rig then stopped some other way)
+    stop() {
+      const wasRunning = this.running;
+      this.running = false;
+      if (this.frame !== null) {
+        cancelAnimationFrame(this.frame);
+        this.frame = null;
+      }
+      this.restoreAll();
+      this.entries.clear();
+      return wasRunning;
+    }
+    toggle() {
+      if (this.running) this.stop();
+      else this.start();
+      return this.running;
+    }
+    tick() {
+      if (!this.running) return;
+      try {
+        this.step();
+      } catch (err) {
+        console.error("[Marionette] simulation stopped after an error:", err);
+        this.stop();
+        Blockbench.showQuickMessage("Marionette simulation stopped; see the console.", 3e3);
+        return;
+      }
+      this.frame = requestAnimationFrame(this.tick);
+    }
+    step() {
+      if (!isMarionetteFormat()) return;
+      const live = /* @__PURE__ */ new Set();
+      for (const limb of allLimbs()) {
+        const description = describeLimb(limb);
+        if (!description) continue;
+        live.add(limb);
+        let entry = this.entries.get(limb);
+        if (!entry || !stillMatches(entry, description)) {
+          entry = {
+            segments: description.segments,
+            target: description.target,
+            primeTarget: description.primeTarget,
+            chain: buildChain(description)
+          };
+          this.entries.set(limb, entry);
+        }
+        const target = scale(targetPosition(description.target), 1 / UNITS_PER_BLOCK);
+        entry.chain.primeDirection = primeDirectionOf(description, entry.chain.root);
+        solve(entry.chain, target);
+        this.apply(entry);
+      }
+      for (const limb of [...this.entries.keys()]) {
+        if (!live.has(limb)) {
+          this.restoreLimb(limb);
+          this.entries.delete(limb);
+        }
+      }
+    }
+    // each group's transform has to be expressed in its parent's frame for a nested chain that parent is the segment posed one step earlier,
+    // so posed transforms are tracked as we go rather than read back off the scene
+    apply(entry) {
+      const joints = jointsOf(entry.chain).map((joint) => scale(joint, UNITS_PER_BLOCK));
+      const posed = /* @__PURE__ */ new Map();
+      for (let i = 0; i < entry.segments.length; i++) {
+        const group = entry.segments[i];
+        const sceneObject = group.mesh;
+        if (!sceneObject) continue;
+        const world = {
+          position: joints[i],
+          quaternion: quaternionFromUnitVectors([0, 0, 1], entry.chain.parts[i].direction)
+        };
+        const parent = posed.get(group.parent) || (isGroup(group.parent) ? modelTransformOf(group.parent) : IDENTITY);
+        const inverse = quaternionConjugate(parent.quaternion);
+        const localPosition = applyQuaternion(inverse, subtract(world.position, parent.position));
+        const localQuaternion = quaternionMultiply(inverse, world.quaternion);
+        this.snapshot(group, sceneObject);
+        sceneObject.position.set(localPosition[0], localPosition[1], localPosition[2]);
+        sceneObject.quaternion.set(
+          localQuaternion[0],
+          localQuaternion[1],
+          localQuaternion[2],
+          localQuaternion[3]
+        );
+        sceneObject.updateMatrixWorld();
+        posed.set(group, world);
+      }
+    }
+    snapshot(group, sceneObject) {
+      if (this.snapshots.has(group)) return;
+      this.snapshots.set(group, {
+        position: [sceneObject.position.x, sceneObject.position.y, sceneObject.position.z],
+        quaternion: [
+          sceneObject.quaternion.x,
+          sceneObject.quaternion.y,
+          sceneObject.quaternion.z,
+          sceneObject.quaternion.w
+        ]
+      });
+    }
+    restoreLimb(limb) {
+      const entry = this.entries.get(limb);
+      if (!entry) return;
+      for (const segment of entry.segments) this.restoreGroup(segment);
+    }
+    restoreGroup(group) {
+      const snapshot = this.snapshots.get(group);
+      if (!snapshot) return;
+      this.snapshots.delete(group);
+      const sceneObject = group.mesh;
+      if (sceneObject) {
+        sceneObject.position.set(...snapshot.position);
+        sceneObject.quaternion.set(...snapshot.quaternion);
+        sceneObject.updateMatrixWorld();
+      }
+    }
+    restoreAll() {
+      for (const group of [...this.snapshots.keys()]) this.restoreGroup(group);
+      this.snapshots.clear();
+    }
+  };
+
   // src/rig.js
   function javaIdentifier(name, fallback = "part") {
     let cleaned = String(name || "").replace(/[^A-Za-z0-9_]/g, "_").replace(/^_+/, "");
@@ -1107,6 +1454,14 @@
     }
     return boundsOfPoints(points);
   }
+  function primeDirectionOf2(limbGroup, firstSegment) {
+    const prime = primeTargetOf(limbGroup);
+    if (!prime) return null;
+    const root = modelTransformOf(firstSegment).position;
+    const direction = normalize(subtract(targetPosition(prime), root));
+    if (!direction[0] && !direction[1] && !direction[2]) return null;
+    return worldDirection(direction);
+  }
   function collectRig(options = {}) {
     const isCube = options.isCube || ((el) => typeof Cube !== "undefined" && el instanceof Cube);
     const isMesh = options.isMesh || ((el) => typeof Mesh !== "undefined" && el instanceof Mesh);
@@ -1125,6 +1480,7 @@
       const limb = {
         name: limbGroup.name,
         var: unique(javaIdentifier(limbGroup.name, "limb")),
+        primeDirection: primeDirectionOf2(limbGroup, chain[0]),
         segments: []
       };
       for (const group of chain) {
@@ -1180,6 +1536,10 @@
   }
   function rad(degrees) {
     return f(degrees * RAD);
+  }
+  function d(value) {
+    const n = Object.is(value, -0) ? 0 : value;
+    return Number.isInteger(n) ? n.toFixed(1) : String(parseFloat(n.toFixed(6)));
   }
   function cubeOffset(cube, origin) {
     return [
@@ -1283,6 +1643,10 @@ ${wrapNames(segmentNames)}
       const calls = runsOf(limb.segments).map(
         (run) => run.count === 1 ? `				.segment(${f(run.sizeXZ)}, ${f(run.sizeY)}, ${f(run.lengthBlocks)})` : `				.segments(${run.count}, ${f(run.sizeXZ)}, ${f(run.sizeY)}, ${f(run.lengthBlocks)})`
       );
+      if (limb.primeDirection) {
+        const [x, y, z] = limb.primeDirection;
+        calls.push(`				.primeDirection(new Vec3(${d(x)}, ${d(y)}, ${d(z)}))`);
+      }
       return `		${limb.var} = Limb.builder(this)
 ${calls.join("\n")}
 				.build();`;
@@ -1295,7 +1659,7 @@ import net.jelly.marionette_lib.utility.Marionette;
 import net.jelly.marionette_lib.utility.MarionettePart;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.${names.baseClassImport};
-import net.minecraft.world.level.Level;
+import net.minecraft.world.level.Level;${rig.limbs.some((limb) => limb.primeDirection) ? "\nimport net.minecraft.world.phys.Vec3;" : ""}
 import net.minecraftforge.entity.PartEntity;
 
 import java.util.List;
@@ -1436,6 +1800,7 @@ public class ${names.className}Renderer extends MobRenderer<${names.className}En
       limbs: rig.limbs.map((limb) => ({
         name: limb.name,
         field: limb.var,
+        prime_direction: limb.primeDirection,
         segments: limb.segments.map((segment) => ({
           part_name: segment.part.name,
           length_units: segment.lengthUnits,
@@ -1600,303 +1965,6 @@ ${err && err.message}`
     };
   }
 
-  // src/fabrik.js
-  var TOLERANCE = 0.01;
-  var MAX_ITERATIONS = 100;
-  function normalize(v) {
-    const d = Math.hypot(v[0], v[1], v[2]);
-    if (d < 1e-4) return [0, 0, 0];
-    return [v[0] / d, v[1] / d, v[2] / d];
-  }
-  function subtract(a, b) {
-    return [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-  }
-  function add(a, b) {
-    return [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
-  }
-  function scale(v, factor) {
-    return [v[0] * factor, v[1] * factor, v[2] * factor];
-  }
-  function distance(a, b) {
-    return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
-  }
-  function rootPos(part) {
-    return subtract(part.position, scale(part.direction, part.length / 2));
-  }
-  function endPos(part) {
-    return add(part.position, scale(part.direction, part.length / 2));
-  }
-  function setRootPos(part, root) {
-    part.position = add(root, scale(part.direction, part.length / 2));
-  }
-  function setEndPos(part, end) {
-    part.position = subtract(end, scale(part.direction, part.length / 2));
-  }
-  function setDirection(part, vector) {
-    part.direction = normalize(vector);
-  }
-  function createChain(lengths, root, directions) {
-    const parts = lengths.map((length, i) => ({
-      length,
-      direction: directions && directions[i] ? normalize(directions[i]) : [0, 0, 1],
-      position: [0, 0, 0]
-    }));
-    const chain = { parts, root: root.slice(), followRootOnly: false };
-    layOutFrom(chain, null);
-    return chain;
-  }
-  function layOutFrom(chain, direction) {
-    let lastEnd = chain.root;
-    for (const part of chain.parts) {
-      if (direction) setDirection(part, direction);
-      setRootPos(part, lastEnd);
-      lastEnd = endPos(part);
-    }
-  }
-  function fabrikForward(chain, target) {
-    const { parts } = chain;
-    for (let i = parts.length - 1; i >= 0; i--) {
-      const part = parts[i];
-      const lastEnd = i === 0 ? chain.root : endPos(parts[i - 1]);
-      const nextRoot = i === parts.length - 1 ? target : rootPos(parts[i + 1]);
-      setDirection(part, subtract(nextRoot, lastEnd));
-      setEndPos(part, nextRoot);
-    }
-  }
-  function fabrikBackward(chain, target) {
-    const { parts } = chain;
-    for (let i = 0; i < parts.length; i++) {
-      const part = parts[i];
-      const lastEnd = i === 0 ? chain.root : endPos(parts[i - 1]);
-      let nextRoot;
-      if (i === parts.length - 1) {
-        nextRoot = chain.followRootOnly ? endPos(part) : target;
-      } else {
-        nextRoot = rootPos(parts[i + 1]);
-      }
-      setDirection(part, subtract(nextRoot, lastEnd));
-      setRootPos(part, lastEnd);
-    }
-  }
-  function solve(chain, target) {
-    const totalLength = chain.parts.reduce((sum, part) => sum + part.length, 0);
-    const distToTarget = distance(target, chain.root);
-    if (distToTarget >= totalLength && !chain.followRootOnly) {
-      layOutFrom(chain, subtract(target, chain.root));
-      return 0;
-    }
-    let iterations = 0;
-    do {
-      if (!chain.followRootOnly) fabrikForward(chain, target);
-      fabrikBackward(chain, target);
-      iterations++;
-    } while (!chain.followRootOnly && distance(target, endPos(chain.parts[chain.parts.length - 1])) > TOLERANCE && iterations < MAX_ITERATIONS);
-    return iterations;
-  }
-  function jointsOf(chain) {
-    return chain.parts.map(rootPos);
-  }
-
-  // src/simulate.js
-  var IDENTITY = { position: [0, 0, 0], quaternion: [0, 0, 0, 1] };
-  function isTarget(node) {
-    return typeof NullObject !== "undefined" && node instanceof NullObject;
-  }
-  function modelTransformOf(node) {
-    const ancestors = [];
-    let current = node;
-    while (isGroup(current)) {
-      ancestors.unshift(current);
-      current = current.parent;
-    }
-    let position = [0, 0, 0];
-    let quaternion = [0, 0, 0, 1];
-    let parentOrigin = [0, 0, 0];
-    for (const group of ancestors) {
-      const local = subtract(group.origin, parentOrigin);
-      position = add(position, applyQuaternion(quaternion, local));
-      quaternion = quaternionMultiply(quaternion, quaternionFromRotation(group.rotation));
-      parentOrigin = group.origin;
-    }
-    return { position, quaternion };
-  }
-  function targetOf(limb) {
-    let found = null;
-    (function walk(node) {
-      if (found || !node.children) return;
-      for (const child of node.children) {
-        if (found) return;
-        if (isTarget(child)) {
-          found = child;
-          return;
-        }
-        walk(child);
-      }
-    })(limb);
-    return found;
-  }
-  function targetPosition(target) {
-    const parent = modelTransformOf(target.parent);
-    return add(parent.position, applyQuaternion(parent.quaternion, target.position));
-  }
-  function describeLimb(limb) {
-    const segments = chainOf(limb).filter((segment) => lengthOf(segment) > 0);
-    if (!segments.length) return null;
-    const target = targetOf(limb);
-    if (!target) return null;
-    return { limb, segments, target, lengths: segments.map(lengthOf) };
-  }
-  function stillMatches(entry, description) {
-    if (entry.segments.length !== description.segments.length) return false;
-    if (entry.target !== description.target) return false;
-    return entry.segments.every(
-      (segment, i) => segment === description.segments[i] && entry.chain.parts[i].length === description.lengths[i] / UNITS_PER_BLOCK
-    );
-  }
-  function buildChain(description) {
-    const root = scale(modelTransformOf(description.segments[0]).position, 1 / UNITS_PER_BLOCK);
-    const directions = description.segments.map(
-      (segment) => applyQuaternion(modelTransformOf(segment).quaternion, [0, 0, 1])
-    );
-    return createChain(
-      description.lengths.map((length) => length / UNITS_PER_BLOCK),
-      root,
-      directions
-    );
-  }
-  var Simulation = class {
-    constructor() {
-      this.running = false;
-      this.entries = /* @__PURE__ */ new Map();
-      this.snapshots = /* @__PURE__ */ new Map();
-      this.frame = null;
-    }
-    start() {
-      if (this.running) return;
-      this.running = true;
-      this.tick = this.tick.bind(this);
-      this.frame = requestAnimationFrame(this.tick);
-    }
-    // always restores even if the loop never started
-    // guarding the whole method on 'running' would skip the restore a case that matters (posed the rig then stopped some other way)
-    stop() {
-      const wasRunning = this.running;
-      this.running = false;
-      if (this.frame !== null) {
-        cancelAnimationFrame(this.frame);
-        this.frame = null;
-      }
-      this.restoreAll();
-      this.entries.clear();
-      return wasRunning;
-    }
-    toggle() {
-      if (this.running) this.stop();
-      else this.start();
-      return this.running;
-    }
-    tick() {
-      if (!this.running) return;
-      try {
-        this.step();
-      } catch (err) {
-        console.error("[Marionette] simulation stopped after an error:", err);
-        this.stop();
-        Blockbench.showQuickMessage("Marionette simulation stopped; see the console.", 3e3);
-        return;
-      }
-      this.frame = requestAnimationFrame(this.tick);
-    }
-    step() {
-      if (!isMarionetteFormat()) return;
-      const live = /* @__PURE__ */ new Set();
-      for (const limb of allLimbs()) {
-        const description = describeLimb(limb);
-        if (!description) continue;
-        live.add(limb);
-        let entry = this.entries.get(limb);
-        if (!entry || !stillMatches(entry, description)) {
-          entry = {
-            segments: description.segments,
-            target: description.target,
-            chain: buildChain(description)
-          };
-          this.entries.set(limb, entry);
-        }
-        const target = scale(targetPosition(description.target), 1 / UNITS_PER_BLOCK);
-        solve(entry.chain, target);
-        this.apply(entry);
-      }
-      for (const limb of [...this.entries.keys()]) {
-        if (!live.has(limb)) {
-          this.restoreLimb(limb);
-          this.entries.delete(limb);
-        }
-      }
-    }
-    // each group's transform has to be expressed in its parent's frame for a nested chain that parent is the segment posed one step earlier,
-    // so posed transforms are tracked as we go rather than read back off the scene
-    apply(entry) {
-      const joints = jointsOf(entry.chain).map((joint) => scale(joint, UNITS_PER_BLOCK));
-      const posed = /* @__PURE__ */ new Map();
-      for (let i = 0; i < entry.segments.length; i++) {
-        const group = entry.segments[i];
-        const sceneObject = group.mesh;
-        if (!sceneObject) continue;
-        const world = {
-          position: joints[i],
-          quaternion: quaternionFromUnitVectors([0, 0, 1], entry.chain.parts[i].direction)
-        };
-        const parent = posed.get(group.parent) || (isGroup(group.parent) ? modelTransformOf(group.parent) : IDENTITY);
-        const inverse = quaternionConjugate(parent.quaternion);
-        const localPosition = applyQuaternion(inverse, subtract(world.position, parent.position));
-        const localQuaternion = quaternionMultiply(inverse, world.quaternion);
-        this.snapshot(group, sceneObject);
-        sceneObject.position.set(localPosition[0], localPosition[1], localPosition[2]);
-        sceneObject.quaternion.set(
-          localQuaternion[0],
-          localQuaternion[1],
-          localQuaternion[2],
-          localQuaternion[3]
-        );
-        sceneObject.updateMatrixWorld();
-        posed.set(group, world);
-      }
-    }
-    snapshot(group, sceneObject) {
-      if (this.snapshots.has(group)) return;
-      this.snapshots.set(group, {
-        position: [sceneObject.position.x, sceneObject.position.y, sceneObject.position.z],
-        quaternion: [
-          sceneObject.quaternion.x,
-          sceneObject.quaternion.y,
-          sceneObject.quaternion.z,
-          sceneObject.quaternion.w
-        ]
-      });
-    }
-    restoreLimb(limb) {
-      const entry = this.entries.get(limb);
-      if (!entry) return;
-      for (const segment of entry.segments) this.restoreGroup(segment);
-    }
-    restoreGroup(group) {
-      const snapshot = this.snapshots.get(group);
-      if (!snapshot) return;
-      this.snapshots.delete(group);
-      const sceneObject = group.mesh;
-      if (sceneObject) {
-        sceneObject.position.set(...snapshot.position);
-        sceneObject.quaternion.set(...snapshot.quaternion);
-        sceneObject.updateMatrixWorld();
-      }
-    }
-    restoreAll() {
-      for (const group of [...this.snapshots.keys()]) this.restoreGroup(group);
-      this.snapshots.clear();
-    }
-  };
-
   // src/simulate_actions.js
   var AVAILABLE2 = () => isMarionetteFormat() && Modes.edit;
   function defaultTargetPosition(limb) {
@@ -1914,6 +1982,41 @@ ${err && err.message}`
     const limbOrigin = isGroup(limb) ? limb.origin : [0, 0, 0];
     return [tip[0] - limbOrigin[0], tip[1] - limbOrigin[1], tip[2] - limbOrigin[2]];
   }
+  function defaultPrimePosition(limb) {
+    const tip = defaultTargetPosition(limb);
+    return [tip[0] * 0.5, tip[1] * 0.5 + 8, tip[2] * 0.5];
+  }
+  function addTargetTo(limb, { name, position, type, existing }) {
+    if (existing) {
+      Blockbench.showQuickMessage(`"${limb.name}" already has a ${name}.`, 2e3);
+      existing.select();
+      return null;
+    }
+    Undo.initEdit({ outliner: true, elements: [], selection: true });
+    const target = new NullObject({ name: `${limb.name}_${name.replace(" ", "_")}` });
+    const added = target.addTo(limb);
+    if (added === void 0) {
+      Undo.finishEdit(`Add Marionette ${name}`, { outliner: true });
+      Blockbench.showMessageBox({
+        title: "Marionette",
+        icon: "error",
+        message: `Could not add a ${name} to that limb.`
+      });
+      return null;
+    }
+    target.init();
+    if (type) target.marionette_target = type;
+    target.position.splice(0, 3, ...position);
+    target.createUniqueName();
+    target.select();
+    Undo.finishEdit(`Add Marionette ${name}`, {
+      outliner: true,
+      elements: [target],
+      selection: true
+    });
+    if (target.preview_controller) target.preview_controller.updateTransform(target);
+    return target;
+  }
   function buildSimulationActions(simulation) {
     const addTarget = new Action("marionette_add_target", {
       name: "Add Marionette Target",
@@ -1924,34 +2027,28 @@ ${err && err.message}`
       click() {
         const limb = selectedLimb();
         if (!limb) return;
-        const existing = targetOf(limb);
-        if (existing) {
-          Blockbench.showQuickMessage(`"${limb.name}" already has a target.`, 2e3);
-          existing.select();
-          return;
-        }
-        Undo.initEdit({ outliner: true, elements: [], selection: true });
-        const target = new NullObject({ name: `${limb.name}_target` });
-        const added = target.addTo(limb);
-        if (added === void 0) {
-          Undo.finishEdit("Add Marionette target", { outliner: true });
-          Blockbench.showMessageBox({
-            title: "Marionette",
-            icon: "error",
-            message: "Could not add a target to that limb."
-          });
-          return;
-        }
-        target.init();
-        target.position.splice(0, 3, ...defaultTargetPosition(limb));
-        target.createUniqueName();
-        target.select();
-        Undo.finishEdit("Add Marionette target", {
-          outliner: true,
-          elements: [target],
-          selection: true
+        addTargetTo(limb, {
+          name: "target",
+          position: defaultTargetPosition(limb),
+          existing: targetOf(limb)
         });
-        if (target.preview_controller) target.preview_controller.updateTransform(target);
+      }
+    });
+    const addPrimeTarget = new Action("marionette_add_prime_target", {
+      name: "Add Marionette Prime Target",
+      description: "Add a prime target biasing which way the selected limb folds",
+      icon: "turn_sharp_right",
+      category: "edit",
+      condition: () => AVAILABLE2() && !!selectedLimb(),
+      click() {
+        const limb = selectedLimb();
+        if (!limb) return;
+        addTargetTo(limb, {
+          name: "prime target",
+          position: defaultPrimePosition(limb),
+          type: TARGET_PRIME,
+          existing: primeTargetOf(limb)
+        });
       }
     });
     const toggle = new Action("marionette_toggle_simulation", {
@@ -1968,7 +2065,7 @@ ${err && err.message}`
         );
       }
     });
-    return [addTarget, toggle];
+    return [addTarget, addPrimeTarget, toggle];
   }
   function installSimulation() {
     const simulation = new Simulation();

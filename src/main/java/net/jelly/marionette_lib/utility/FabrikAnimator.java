@@ -13,6 +13,7 @@ public class FabrikAnimator {
     private Vec3 fabrikTarget = Vec3.ZERO;
     private boolean followRootOnly = false;
     private Vec3 root;
+    private Vec3 primeDirection = null;
 
     public FabrikAnimator(Entity owner, MarionettePart<?>[] allParts) {
         this.owner = owner;
@@ -43,6 +44,19 @@ public class FabrikAnimator {
     /** segments only follow the root, ignoring the target - for worms, tails, trailing cloth, etc. */
     public void setFollowRootOnly(boolean b) {
         this.followRootOnly = b;
+    }
+
+    /** re-primes along {@code direction} before every solve, see {@link #primeMultipart(Vec3)}. clear with {@link #clearPrimeDirection()} */
+    public void setPrimeDirection(Vec3 direction) {
+        this.primeDirection = direction == null ? null : direction.normalize();
+    }
+
+    public Vec3 getPrimeDirection() {
+        return primeDirection;
+    }
+
+    public void clearPrimeDirection() {
+        this.primeDirection = null;
     }
 
     protected Vec3 root() {
@@ -104,6 +118,9 @@ public class FabrikAnimator {
      * every direction from neighboring positions again.
      * Useful for pseudo constraints with FABRIK, e.g. humanoid arms can be primed backwards so FABRIK will almost always
      * converge such that the elbow joint's rotation is < 180 degrees (not hyperrotated the wrong direction)
+     *
+     * This has mostly been replaced by the persistent primeDirection, which has BlockBench simulation compat
+     * However, users still have the option to leave primeDirection null and prime manually in cases that need fine control.
      */
     public void primeMultipart(Vec3 direction) {
         Vec3 dir = direction.normalize();
@@ -127,6 +144,8 @@ public class FabrikAnimator {
     }
 
     public void tickMultipart() {
+        if (primeDirection != null) primeMultipart(primeDirection);
+
         float totalLength = 0;
         float distToTarget = (float) (fabrikTarget.subtract(root()).length());
         for (MarionettePart<?> part : allParts) totalLength += part.getLength();

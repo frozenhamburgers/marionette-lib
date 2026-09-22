@@ -18,6 +18,12 @@ function rad(degrees) {
 	return f(degrees * RAD);
 }
 
+// Vec3 takes doubles, not floats
+function d(value) {
+	const n = Object.is(value, -0) ? 0 : value;
+	return Number.isInteger(n) ? n.toFixed(1) : String(parseFloat(n.toFixed(6)));
+}
+
 // verbatim from the codec
 export function cubeOffset(cube, origin) {
 	return [
@@ -150,6 +156,10 @@ export function emitEntity(rig, names) {
 				? `\t\t\t\t.segment(${f(run.sizeXZ)}, ${f(run.sizeY)}, ${f(run.lengthBlocks)})`
 				: `\t\t\t\t.segments(${run.count}, ${f(run.sizeXZ)}, ${f(run.sizeY)}, ${f(run.lengthBlocks)})`
 		);
+		if (limb.primeDirection) {
+			const [x, y, z] = limb.primeDirection;
+			calls.push(`\t\t\t\t.primeDirection(new Vec3(${d(x)}, ${d(y)}, ${d(z)}))`);
+		}
 		return `\t\t${limb.var} = Limb.builder(this)\n${calls.join('\n')}\n\t\t\t\t.build();`;
 	});
 
@@ -162,7 +172,7 @@ import net.jelly.marionette_lib.utility.Marionette;
 import net.jelly.marionette_lib.utility.MarionettePart;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.${names.baseClassImport};
-import net.minecraft.world.level.Level;
+import net.minecraft.world.level.Level;${rig.limbs.some(limb => limb.primeDirection) ? '\nimport net.minecraft.world.phys.Vec3;' : ''}
 import net.minecraftforge.entity.PartEntity;
 
 import java.util.List;
@@ -314,6 +324,7 @@ export function emitSidecar(rig, names) {
 		limbs: rig.limbs.map(limb => ({
 			name: limb.name,
 			field: limb.var,
+			prime_direction: limb.primeDirection,
 			segments: limb.segments.map(segment => ({
 				part_name: segment.part.name,
 				length_units: segment.lengthUnits,

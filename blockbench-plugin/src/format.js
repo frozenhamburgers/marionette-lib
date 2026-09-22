@@ -1,7 +1,9 @@
 // the marionette ModelFormat, marionette_type group property
 // and behavior overrides letting a bone live inside a plain group all torn down by the returned teardown so unloading leaves other formats untouched
 
-import { FORMAT_ID, ROLE_NONE, ROLE_LIMB, ROLE_SEGMENT } from './constants.js';
+import {
+	FORMAT_ID, ROLE_NONE, ROLE_LIMB, ROLE_SEGMENT, TARGET_FABRIK, TARGET_PRIME,
+} from './constants.js';
 
 // flags copied from modded_entity so marionette models behave identically in editor
 function baseFlags() {
@@ -99,16 +101,37 @@ export function registerBehaviorOverrides() {
 }
 
 /** @returns {{format: ModelFormat, teardown: () => void}} */
+export function registerTargetProperty() {
+	return new Property(NullObject, 'enum', 'marionette_target', {
+		default: TARGET_FABRIK,
+		values: [TARGET_FABRIK, TARGET_PRIME],
+		condition: { formats: [FORMAT_ID] },
+		label: 'Marionette target',
+		inputs: {
+			element_panel: {
+				input: {
+					label: 'Marionette target',
+					type: 'select',
+					options: {
+						[TARGET_FABRIK]: 'FABRIK target (chain reaches for it)',
+						[TARGET_PRIME]: 'Prime target (biases which way it folds)',
+					},
+				},
+			},
+		},
+	});
+}
+
 export function installFormat() {
 	const format = registerFormat();
-	const property = registerRoleProperty();
+	const properties = [registerRoleProperty(), registerTargetProperty()];
 	const overrides = registerBehaviorOverrides();
 
 	return {
 		format,
 		teardown() {
 			for (const override of overrides) override.delete();
-			property.delete();
+			for (const property of properties) property.delete();
 			format.delete();
 		},
 	};

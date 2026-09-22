@@ -1,6 +1,8 @@
 // QUERIES only over the outliner: limbs, segments, bone ownership, chain order, nothing here should mutate
 
-import { FORMAT_ID, ROLE_NONE, ROLE_LIMB, ROLE_SEGMENT } from './constants.js';
+import {
+	FORMAT_ID, ROLE_NONE, ROLE_LIMB, ROLE_SEGMENT, TARGET_FABRIK,
+} from './constants.js';
 import { boneTip, exportOrigin } from './geometry.js';
 
 export function isMarionetteFormat() {
@@ -159,4 +161,8 @@ export function rotationChainOf(node) {
 		current = current.parent;
 	}
 	return chain;
+}
+
+export function targetTypeOf(node) {
+	return (node && node.marionette_target) || TARGET_FABRIK;
 }

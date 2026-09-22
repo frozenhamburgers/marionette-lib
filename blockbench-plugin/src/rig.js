@@ -6,7 +6,11 @@ import {
 	allLimbs, chainOf, boneOf, exportOriginOf, lengthOf, ownGeometryOf,
 	isGroup, isBone, isSegment,
 } from './roles.js';
-import { cubeCorners, meshVertexPoints, boundsOfPoints, isUnrotated } from './geometry.js';
+import {
+	cubeCorners, meshVertexPoints, boundsOfPoints, isUnrotated, worldDirection,
+} from './geometry.js';
+import { primeTargetOf, targetPosition, modelTransformOf } from './simulate.js';
+import { normalize, subtract } from './fabrik.js';
 
 export function javaIdentifier(name, fallback = 'part') {
 	let cleaned = String(name || '').replace(/[^A-Za-z0-9_]/g, '_').replace(/^_+/, '');
@@ -143,6 +147,17 @@ export function segmentBounds(segment, options) {
 	return boundsOfPoints(points);
 }
 
+// prime object's direction from the chain root, converted out of blockbench model space
+function primeDirectionOf(limbGroup, firstSegment) {
+	const prime = primeTargetOf(limbGroup);
+	if (!prime) return null;
+
+	const root = modelTransformOf(firstSegment).position;
+	const direction = normalize(subtract(targetPosition(prime), root));
+	if (!direction[0] && !direction[1] && !direction[2]) return null;
+	return worldDirection(direction);
+}
+
 /** @returns {{limbs: Array, segments: Array, textureWidth: number, textureHeight: number, shadowRadius: number, warnings: string[]}} */
 export function collectRig(options = {}) {
 	const isCube = options.isCube || (el => typeof Cube !== 'undefined' && el instanceof Cube);
@@ -168,6 +183,7 @@ export function collectRig(options = {}) {
 		const limb = {
 			name: limbGroup.name,
 			var: unique(javaIdentifier(limbGroup.name, 'limb')),
+			primeDirection: primeDirectionOf(limbGroup, chain[0]),
 			segments: [],
 		};
 

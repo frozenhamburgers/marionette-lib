@@ -1,8 +1,9 @@
 // kept apart from simulate.js so solver can be tested indepedently
 
-import { Simulation, targetOf, modelTransformOf } from './simulate.js';
+import { Simulation, targetOf, primeTargetOf, modelTransformOf } from './simulate.js';
 import { isMarionetteFormat, selectedLimb, chainOf, lengthOf, isGroup } from './roles.js';
 import { applyQuaternion } from './geometry.js';
+import { TARGET_PRIME } from './constants.js';
 
 const AVAILABLE = () => isMarionetteFormat() && Modes.edit;
 
@@ -27,6 +28,47 @@ export function defaultTargetPosition(limb) {
 	return [tip[0] - limbOrigin[0], tip[1] - limbOrigin[1], tip[2] - limbOrigin[2]];
 }
 
+// halfway out and offset so it reads as a fold hint rather than something to reach
+export function defaultPrimePosition(limb) {
+	const tip = defaultTargetPosition(limb);
+	return [tip[0] * 0.5, tip[1] * 0.5 + 8, tip[2] * 0.5];
+}
+
+function addTargetTo(limb, { name, position, type, existing }) {
+	if (existing) {
+		Blockbench.showQuickMessage(`"${limb.name}" already has a ${name}.`, 2000);
+		existing.select();
+		return null;
+	}
+
+	Undo.initEdit({ outliner: true, elements: [], selection: true });
+
+	const target = new NullObject({ name: `${limb.name}_${name.replace(' ', '_')}` });
+	const added = target.addTo(limb);
+	if (added === undefined) {
+		Undo.finishEdit(`Add Marionette ${name}`, { outliner: true });
+		Blockbench.showMessageBox({
+			title: 'Marionette',
+			icon: 'error',
+			message: `Could not add a ${name} to that limb.`,
+		});
+		return null;
+	}
+
+	target.init();
+	if (type) target.marionette_target = type;
+	target.position.splice(0, 3, ...position);
+	target.createUniqueName();
+	target.select();
+
+	Undo.finishEdit(`Add Marionette ${name}`, {
+		outliner: true, elements: [target], selection: true,
+	});
+
+	if (target.preview_controller) target.preview_controller.updateTransform(target);
+	return target;
+}
+
 export function buildSimulationActions(simulation) {
 	const addTarget = new Action('marionette_add_target', {
 		name: 'Add Marionette Target',
@@ -37,38 +79,29 @@ export function buildSimulationActions(simulation) {
 		click() {
 			const limb = selectedLimb();
 			if (!limb) return;
-
-			const existing = targetOf(limb);
-			if (existing) {
-				Blockbench.showQuickMessage(`"${limb.name}" already has a target.`, 2000);
-				existing.select();
-				return;
-			}
-
-			Undo.initEdit({ outliner: true, elements: [], selection: true });
-
-			const target = new NullObject({ name: `${limb.name}_target` });
-			const added = target.addTo(limb);
-			if (added === undefined) {
-				Undo.finishEdit('Add Marionette target', { outliner: true });
-				Blockbench.showMessageBox({
-					title: 'Marionette',
-					icon: 'error',
-					message: 'Could not add a target to that limb.',
-				});
-				return;
-			}
-
-			target.init();
-			target.position.splice(0, 3, ...defaultTargetPosition(limb));
-			target.createUniqueName();
-			target.select();
-
-			Undo.finishEdit('Add Marionette target', {
-				outliner: true, elements: [target], selection: true,
+			addTargetTo(limb, {
+				name: 'target',
+				position: defaultTargetPosition(limb),
+				existing: targetOf(limb),
 			});
+		},
+	});
 
-			if (target.preview_controller) target.preview_controller.updateTransform(target);
+	const addPrimeTarget = new Action('marionette_add_prime_target', {
+		name: 'Add Marionette Prime Target',
+		description: 'Add a prime target biasing which way the selected limb folds',
+		icon: 'turn_sharp_right',
+		category: 'edit',
+		condition: () => AVAILABLE() && !!selectedLimb(),
+		click() {
+			const limb = selectedLimb();
+			if (!limb) return;
+			addTargetTo(limb, {
+				name: 'prime target',
+				position: defaultPrimePosition(limb),
+				type: TARGET_PRIME,
+				existing: primeTargetOf(limb),
+			});
 		},
 	});
 
@@ -89,7 +122,7 @@ export function buildSimulationActions(simulation) {
 		},
 	});
 
-	return [addTarget, toggle];
+	return [addTarget, addPrimeTarget, toggle];
 }
 
 export function installSimulation() {

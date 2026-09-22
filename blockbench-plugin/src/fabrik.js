@@ -60,7 +60,7 @@ export function createChain(lengths, root, directions) {
 		position: [0, 0, 0],
 	}));
 
-	const chain = { parts, root: root.slice(), followRootOnly: false };
+	const chain = { parts, root: root.slice(), followRootOnly: false, primeDirection: null };
 	layOutFrom(chain, null);
 	return chain;
 }
@@ -110,6 +110,8 @@ function fabrikBackward(chain, target) {
  * @returns {number} iterations run for nonconvergence flagging
  */
 export function solve(chain, target) {
+	if (chain.primeDirection) layOutFrom(chain, chain.primeDirection);
+
 	const totalLength = chain.parts.reduce((sum, part) => sum + part.length, 0);
 	const distToTarget = distance(target, chain.root);
 

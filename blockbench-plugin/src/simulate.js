@@ -5,13 +5,15 @@
 // difference between a preview and an edit and MUST stay absolute, a simulation that baked itself into the rig would destroy the rest pose the exporter depends on
 // solver runs in blocks (fabrik.js), so this module is the only place converting to/from model units
 
-import { UNITS_PER_BLOCK } from './constants.js';
-import { allLimbs, chainOf, lengthOf, isGroup, isMarionetteFormat } from './roles.js';
+import { UNITS_PER_BLOCK, TARGET_FABRIK, TARGET_PRIME } from './constants.js';
+import {
+	allLimbs, chainOf, lengthOf, isGroup, isMarionetteFormat, targetTypeOf,
+} from './roles.js';
 import {
 	quaternionFromRotation, quaternionMultiply, quaternionConjugate,
 	applyQuaternion, quaternionFromUnitVectors,
 } from './geometry.js';
-import { createChain, solve, jointsOf, add, subtract, scale } from './fabrik.js';
+import { createChain, solve, jointsOf, add, subtract, scale, normalize } from './fabrik.js';
 
 const IDENTITY = { position: [0, 0, 0], quaternion: [0, 0, 0, 1] };
 
@@ -42,17 +44,25 @@ export function modelTransformOf(node) {
 	return { position, quaternion };
 }
 
-export function targetOf(limb) {
+function findTarget(limb, type) {
 	let found = null;
 	(function walk(node) {
 		if (found || !node.children) return;
 		for (const child of node.children) {
 			if (found) return;
-			if (isTarget(child)) { found = child; return; }
+			if (isTarget(child) && targetTypeOf(child) === type) { found = child; return; }
 			walk(child);
 		}
 	})(limb);
 	return found;
+}
+
+export function targetOf(limb) {
+	return findTarget(limb, TARGET_FABRIK);
+}
+
+export function primeTargetOf(limb) {
+	return findTarget(limb, TARGET_PRIME);
 }
 
 // NullObject.behavior sets no use_absolute_position, so its position is relative to its parent group's origin, unlike Group/Cube origins which are absolute.
@@ -62,6 +72,14 @@ export function targetPosition(target) {
 	return add(parent.position, applyQuaternion(parent.quaternion, target.position));
 }
 
+// direction from the chain root toward the prime object, matching FabrikAnimator.setPrimeDirection
+function primeDirectionOf(description, root) {
+	if (!description.primeTarget) return null;
+	const position = scale(targetPosition(description.primeTarget), 1 / UNITS_PER_BLOCK);
+	const direction = normalize(subtract(position, root));
+	return direction[0] || direction[1] || direction[2] ? direction : null;
+}
+
 function describeLimb(limb) {
 	const segments = chainOf(limb).filter(segment => lengthOf(segment) > 0);
 	if (!segments.length) return null;
@@ -69,12 +87,17 @@ function describeLimb(limb) {
 	const target = targetOf(limb);
 	if (!target) return null;
 
-	return { limb, segments, target, lengths: segments.map(lengthOf) };
+	return {
+		limb, segments, target,
+		primeTarget: primeTargetOf(limb),
+		lengths: segments.map(lengthOf),
+	};
 }
 
 function stillMatches(entry, description) {
 	if (entry.segments.length !== description.segments.length) return false;
 	if (entry.target !== description.target) return false;
+	if (entry.primeTarget !== description.primeTarget) return false;
 	return entry.segments.every((segment, i) =>
 		segment === description.segments[i] &&
 		entry.chain.parts[i].length === description.lengths[i] / UNITS_PER_BLOCK
@@ -161,12 +184,14 @@ export class Simulation {
 				entry = {
 					segments: description.segments,
 					target: description.target,
+					primeTarget: description.primeTarget,
 					chain: buildChain(description),
 				};
 				this.entries.set(limb, entry);
 			}
 
 			const target = scale(targetPosition(description.target), 1 / UNITS_PER_BLOCK);
+			entry.chain.primeDirection = primeDirectionOf(description, entry.chain.root);
 			solve(entry.chain, target);
 			this.apply(entry);
 		}

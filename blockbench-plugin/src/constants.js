@@ -17,3 +17,6 @@ export const UNITS_PER_BLOCK = 16;
 
 // stamped into exported files and the sidecar so a diff shows what produced them
 export const PLUGIN_VERSION = '0.3.0';
+
+export const TARGET_FABRIK = 'fabrik';
+export const TARGET_PRIME = 'prime';

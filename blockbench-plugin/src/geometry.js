@@ -251,3 +251,8 @@ function normalizeQuaternion(q) {
 	if (!d) return [0, 0, 0, 1];
 	return [q[0] / d, q[1] / d, q[2] / d, q[3] / d];
 }
+
+// blockbench model space to world space, a 180 yaw matching the renderer's Axis.YP.rotationDegrees(180), derived from setupAnim's setPos mapping composed with the codec's X/Y negation
+export function worldDirection(direction) {
+	return [-direction[0] + 0, direction[1] + 0, -direction[2] + 0];
+}
