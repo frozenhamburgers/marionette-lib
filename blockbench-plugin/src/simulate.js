@@ -7,11 +7,12 @@
 
 import { UNITS_PER_BLOCK, TARGET_FABRIK, TARGET_PRIME } from './constants.js';
 import {
-	allLimbs, chainOf, lengthOf, isGroup, isMarionetteFormat, targetTypeOf,
+	chainOf, lengthOf, isGroup, isLimb, isMarionetteFormat, targetTypeOf,
+	limbsInAttachOrder, parentSegmentOf,
 } from './roles.js';
 import {
 	quaternionFromRotation, quaternionMultiply, quaternionConjugate,
-	applyQuaternion, quaternionFromUnitVectors,
+	applyQuaternion, quaternionFromUnitVectors, partToWorld, worldToPart,
 } from './geometry.js';
 import { createChain, solve, jointsOf, add, subtract, scale, normalize } from './fabrik.js';
 
@@ -50,6 +51,7 @@ function findTarget(limb, type) {
 		if (found || !node.children) return;
 		for (const child of node.children) {
 			if (found) return;
+			if (isLimb(child)) continue; // a nested limb's targets drive that limb, not this one
 			if (isTarget(child) && targetTypeOf(child) === type) { found = child; return; }
 			walk(child);
 		}
@@ -80,6 +82,29 @@ function primeDirectionOf(description, root) {
 	return direction[0] || direction[1] || direction[2] ? direction : null;
 }
 
+// a segment's MarionettePart at rest: the centre of its bone, which is what the part's position() is,
+// and the direction the bone runs
+export function partTransformOf(segment) {
+	const transform = modelTransformOf(segment);
+	const direction = applyQuaternion(transform.quaternion, [0, 0, 1]);
+	return {
+		position: add(transform.position, scale(direction, lengthOf(segment) / 2)),
+		direction,
+	};
+}
+
+// where the chain root sits in the parent part's own frame, read off the authored rest pose since that
+// is the one place the attachment is expressed. the roll-0 frame is used rather than the parent group's
+// authored quaternion, whose roll the runtime has no way to reproduce
+export function attachmentOffsetOf(limb, parentSegment) {
+	const segments = chainOf(limb);
+	if (!segments.length) return [0, 0, 0];
+
+	const root = modelTransformOf(segments[0]).position;
+	const parent = partTransformOf(parentSegment);
+	return worldToPart(parent.direction, subtract(root, parent.position));
+}
+
 function describeLimb(limb) {
 	const segments = chainOf(limb).filter(segment => lengthOf(segment) > 0);
 	if (!segments.length) return null;
@@ -90,6 +115,7 @@ function describeLimb(limb) {
 	return {
 		limb, segments, target,
 		primeTarget: primeTargetOf(limb),
+		parentSegment: parentSegmentOf(limb),
 		lengths: segments.map(lengthOf),
 	};
 }
@@ -98,22 +124,40 @@ function stillMatches(entry, description) {
 	if (entry.segments.length !== description.segments.length) return false;
 	if (entry.target !== description.target) return false;
 	if (entry.primeTarget !== description.primeTarget) return false;
+	if (entry.parentSegment !== description.parentSegment) return false;
 	return entry.segments.every((segment, i) =>
 		segment === description.segments[i] &&
 		entry.chain.parts[i].length === description.lengths[i] / UNITS_PER_BLOCK
 	);
 }
 
-function buildChain(description) {
-	const root = scale(modelTransformOf(description.segments[0]).position, 1 / UNITS_PER_BLOCK);
+// an attached limb roots on its parent part wherever that part is *now*, so the parent's solved pose is
+// preferred and the rest pose is only the fallback for a parent limb that has no target and so never solves
+function rootOf(description, posed) {
+	if (description.parentSegment) {
+		const parent = posed.get(description.parentSegment)
+			|| scaleTransform(partTransformOf(description.parentSegment), 1 / UNITS_PER_BLOCK);
+		const offset = scale(
+			attachmentOffsetOf(description.limb, description.parentSegment),
+			1 / UNITS_PER_BLOCK,
+		);
+		return add(parent.position, partToWorld(parent.direction, offset));
+	}
+	return scale(modelTransformOf(description.segments[0]).position, 1 / UNITS_PER_BLOCK);
+}
 
+function scaleTransform(transform, factor) {
+	return { position: scale(transform.position, factor), direction: transform.direction };
+}
+
+function buildChain(description, posed) {
 	const directions = description.segments.map(segment =>
 		applyQuaternion(modelTransformOf(segment).quaternion, [0, 0, 1])
 	);
 
 	return createChain(
 		description.lengths.map(length => length / UNITS_PER_BLOCK),
-		root,
+		rootOf(description, posed),
 		directions,
 	);
 }
@@ -172,7 +216,12 @@ export class Simulation {
 
 		const live = new Set();
 
-		for (const limb of allLimbs()) {
+		// solved pose of every segment simulated this frame, so a limb attached to one roots on where it
+		// actually ended up rather than where it was authored. attach order guarantees the parent is in
+		// here before any child reads it
+		const posed = new Map();
+
+		for (const limb of limbsInAttachOrder()) {
 			const description = describeLimb(limb);
 			if (!description) continue;
 			live.add(limb);
@@ -185,15 +234,22 @@ export class Simulation {
 					segments: description.segments,
 					target: description.target,
 					primeTarget: description.primeTarget,
-					chain: buildChain(description),
+					parentSegment: description.parentSegment,
+					chain: buildChain(description, posed),
 				};
 				this.entries.set(limb, entry);
 			}
 
 			const target = scale(targetPosition(description.target), 1 / UNITS_PER_BLOCK);
+			entry.chain.root = rootOf(description, posed);
 			entry.chain.primeDirection = primeDirectionOf(description, entry.chain.root);
 			solve(entry.chain, target);
 			this.apply(entry);
+
+			entry.segments.forEach((segment, i) => posed.set(segment, {
+				position: entry.chain.parts[i].position,
+				direction: entry.chain.parts[i].direction,
+			}));
 		}
 
 		// a limb that lost its target goes back to its authored pose immediately

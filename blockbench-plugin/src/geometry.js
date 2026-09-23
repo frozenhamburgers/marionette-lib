@@ -256,3 +256,48 @@ function normalizeQuaternion(q) {
 export function worldDirection(direction) {
 	return [-direction[0] + 0, direction[1] + 0, -direction[2] + 0];
 }
+
+// part space below: +Z along a part's direction, roll fixed at 0 with +Y up, the frame
+// MarionettePart defines and MarionetteModel renders in. ports of MarionettePart's own methods so an
+// attachment offset written by the exporter resolves to the same point at runtime.
+// safe to feed blockbench-space vectors even though the runtime frame is built in world space: the two
+// differ by worldDirection, a half turn about +Y, which leaves part-space components untouched (asserted
+// in geometry.test.js)
+
+// Vec3.normalize's 1e-4 zeroing, so a degenerate direction gives the identity frame here as it does there
+function unitVector(v) {
+	const d = Math.hypot(v[0], v[1], v[2]);
+	if (d < 1.0e-4) return [0, 0, 0];
+	return [v[0] / d, v[1] / d, v[2] / d];
+}
+
+export function partFrameAngles(direction) {
+	const d = unitVector(direction);
+	return {
+		yaw: Math.atan2(d[0], d[2]),
+		pitch: Math.asin(Math.max(-1, Math.min(1, d[1]))),
+	};
+}
+
+// Vec3.xRot(a) is Rx(-a) while Vec3.yRot(a) is Ry(a), the two do not share a handedness, mirrored here
+function xRot(v, a) {
+	const c = Math.cos(a), s = Math.sin(a);
+	return [v[0], v[1] * c + v[2] * s, v[2] * c - v[1] * s];
+}
+
+function yRot(v, a) {
+	const c = Math.cos(a), s = Math.sin(a);
+	return [v[0] * c + v[2] * s, v[1], v[2] * c - v[0] * s];
+}
+
+/** MarionettePart.partToWorld: `local` read in the frame `direction` defines */
+export function partToWorld(direction, local) {
+	const { yaw, pitch } = partFrameAngles(direction);
+	return yRot(xRot(local, pitch), yaw);
+}
+
+/** MarionettePart.worldToPart */
+export function worldToPart(direction, world) {
+	const { yaw, pitch } = partFrameAngles(direction);
+	return xRot(yRot(world, -yaw), -pitch);
+}

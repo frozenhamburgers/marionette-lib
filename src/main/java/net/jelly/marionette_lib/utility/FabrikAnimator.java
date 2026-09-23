@@ -14,6 +14,8 @@ public class FabrikAnimator {
     private Vec3 fabrikTarget = Vec3.ZERO;
     private boolean followRootOnly = false;
     private Vec3 root;
+    private MarionettePart<?> rootPart = null;
+    private Vec3 rootOffset = Vec3.ZERO;
     private Vec3 primeDirection = null;
     private Vec3 bodyPrimeDirection = null;
 
@@ -41,6 +43,35 @@ public class FabrikAnimator {
     /** default root is the parent entity's own position */
     public void setRoot(Vec3 root) {
         this.root = root;
+        this.rootPart = null;
+    }
+
+    /**
+     * Roots the chain at {@code offset} in {@code part}'s own frame, see
+     * {@link MarionettePart#partToWorld(Vec3)}, re-resolved before every solve so the chain rides along
+     * with the part instead of sitting at a fixed point. This is how one limb hangs off another. Clear
+     * with {@link #detachRoot()}.
+     * <p>
+     * {@code part} has to have solved for the tick before this chain does, or the root is read a tick
+     * late, which {@link Marionette#tickMarionette()} handles by ticking attached limbs last.
+     */
+    public void attachRoot(MarionettePart<?> part, Vec3 offset) {
+        this.rootPart = part;
+        this.rootOffset = offset == null ? Vec3.ZERO : offset;
+        this.root = null;
+    }
+
+    public MarionettePart<?> getRootPart() {
+        return rootPart;
+    }
+
+    public Vec3 getRootOffset() {
+        return rootOffset;
+    }
+
+    public void detachRoot() {
+        this.rootPart = null;
+        this.rootOffset = Vec3.ZERO;
     }
 
     /** segments only follow the root, ignoring the target - for worms, tails, trailing cloth, etc. */
@@ -87,6 +118,7 @@ public class FabrikAnimator {
     }
 
     protected Vec3 root() {
+        if (rootPart != null) return rootPart.position().add(rootPart.partToWorld(rootOffset));
         if (root != null) return root;
         return owner.position();
     }

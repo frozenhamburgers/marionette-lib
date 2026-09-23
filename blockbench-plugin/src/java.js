@@ -158,7 +158,12 @@ export function emitEntity(rig, names) {
 		);
 		if (limb.primeDirection) {
 			const [x, y, z] = limb.primeDirection;
-			calls.push(`\t\t\t\t.primeDirection(new Vec3(${d(x)}, ${d(y)}, ${d(z)}))`);
+			calls.push(`\t\t\t\t.bodyPrimeDirection(new Vec3(${d(x)}, ${d(y)}, ${d(z)}))`);
+		}
+		if (limb.attachment) {
+			const { limb: parent, partIndex, offset } = limb.attachment;
+			calls.push(`\t\t\t\t.attachRoot(${parent}.parts()[${partIndex}], ` +
+				`new Vec3(${d(offset[0])}, ${d(offset[1])}, ${d(offset[2])}))`);
 		}
 		return `\t\t${limb.var} = Limb.builder(this)\n${calls.join('\n')}\n\t\t\t\t.build();`;
 	});
@@ -172,7 +177,7 @@ import net.jelly.marionette_lib.utility.Marionette;
 import net.jelly.marionette_lib.utility.MarionettePart;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.${names.baseClassImport};
-import net.minecraft.world.level.Level;${rig.limbs.some(limb => limb.primeDirection) ? '\nimport net.minecraft.world.phys.Vec3;' : ''}
+import net.minecraft.world.level.Level;${rig.limbs.some(limb => limb.primeDirection || limb.attachment) ? '\nimport net.minecraft.world.phys.Vec3;' : ''}
 import net.minecraftforge.entity.PartEntity;
 
 import java.util.List;
@@ -325,6 +330,13 @@ export function emitSidecar(rig, names) {
 			name: limb.name,
 			field: limb.var,
 			prime_direction: limb.primeDirection,
+			prime_direction_space: limb.primeDirection ? 'body' : null,
+			attachment: limb.attachment && {
+				limb: limb.attachment.limb,
+				part_name: limb.attachment.partName,
+				part_index: limb.attachment.partIndex,
+				offset: limb.attachment.offset,
+			},
 			segments: limb.segments.map(segment => ({
 				part_name: segment.part.name,
 				length_units: segment.lengthUnits,

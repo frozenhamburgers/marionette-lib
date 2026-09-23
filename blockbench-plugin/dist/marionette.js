@@ -103,7 +103,11 @@
     return new Property(NullObject, "enum", "marionette_target", {
       default: TARGET_FABRIK,
       values: [TARGET_FABRIK, TARGET_PRIME],
-      condition: { formats: [FORMAT_ID] },
+      // selecting a group marks every descendant selected too (Group.select), so a limb holding a target
+      // would otherwise show this field as if it were the limb's own. an `instance` means the question
+      // is whether to keep a stored value on merge/copy/reset, not whether to draw the input, and that
+      // answer must never depend on the selection or loading a file would drop the value
+      condition: (instance) => Format && Format.id === FORMAT_ID && (!!instance || !Group.first_selected),
       label: "Marionette target",
       inputs: {
         element_panel: {
@@ -320,6 +324,34 @@
   function worldDirection(direction) {
     return [-direction[0] + 0, direction[1] + 0, -direction[2] + 0];
   }
+  function unitVector(v) {
+    const d2 = Math.hypot(v[0], v[1], v[2]);
+    if (d2 < 1e-4) return [0, 0, 0];
+    return [v[0] / d2, v[1] / d2, v[2] / d2];
+  }
+  function partFrameAngles(direction) {
+    const d2 = unitVector(direction);
+    return {
+      yaw: Math.atan2(d2[0], d2[2]),
+      pitch: Math.asin(Math.max(-1, Math.min(1, d2[1])))
+    };
+  }
+  function xRot(v, a) {
+    const c = Math.cos(a), s = Math.sin(a);
+    return [v[0], v[1] * c + v[2] * s, v[2] * c - v[1] * s];
+  }
+  function yRot(v, a) {
+    const c = Math.cos(a), s = Math.sin(a);
+    return [v[0] * c + v[2] * s, v[1], v[2] * c - v[0] * s];
+  }
+  function partToWorld(direction, local) {
+    const { yaw, pitch } = partFrameAngles(direction);
+    return yRot(xRot(local, pitch), yaw);
+  }
+  function worldToPart(direction, world) {
+    const { yaw, pitch } = partFrameAngles(direction);
+    return xRot(yRot(world, -yaw), -pitch);
+  }
 
   // src/roles.js
   function isMarionetteFormat() {
@@ -379,6 +411,39 @@
   function limbOf(segment) {
     return nearestAncestorWithRole(segment, ROLE_LIMB);
   }
+  function nearestRigAncestor(node) {
+    let parent = node && node.parent;
+    while (parent && parent !== "root") {
+      if (isSegment(parent) || isLimb(parent)) return parent;
+      parent = parent.parent;
+    }
+    return null;
+  }
+  function parentSegmentOf(limb) {
+    const ancestor = nearestRigAncestor(limb);
+    return isSegment(ancestor) ? ancestor : null;
+  }
+  function enclosingLimbOf(limb) {
+    return nearestAncestorWithRole(limb, ROLE_LIMB);
+  }
+  function isMisnestedLimb(limb) {
+    return isLimb(limb) && isLimb(nearestRigAncestor(limb));
+  }
+  function limbsInAttachOrder() {
+    const limbs = allLimbs();
+    const order = [];
+    const placed = /* @__PURE__ */ new Set();
+    for (const limb of limbs) place(limb);
+    return order;
+    function place(limb) {
+      if (placed.has(limb)) return;
+      placed.add(limb);
+      const segment = parentSegmentOf(limb);
+      const parent = segment && limbOf(segment);
+      if (parent && parent !== limb) place(parent);
+      order.push(limb);
+    }
+  }
   function chainOf(limb) {
     const out = [];
     walk(limb);
@@ -386,6 +451,7 @@
     function walk(node) {
       if (!node || !node.children) return;
       for (const child of node.children) {
+        if (isLimb(child)) continue;
         if (isSegment(child)) out.push(child);
         if (isGroup(child)) walk(child);
       }
@@ -395,26 +461,29 @@
     if (!segment || !segment.children) return [];
     return segment.children.filter(isSegment);
   }
+  function segmentAround(node) {
+    if (isSegment(node)) return node;
+    if (isLimb(node)) return null;
+    return isSegment(nearestRigAncestor(node)) ? nearestRigAncestor(node) : null;
+  }
   function selectedSegment() {
     if (typeof Group !== "undefined" && Group.first_selected) {
-      if (isSegment(Group.first_selected)) return Group.first_selected;
-      const ancestor = nearestAncestorWithRole(Group.first_selected, ROLE_SEGMENT);
-      if (ancestor) return ancestor;
+      const segment = segmentAround(Group.first_selected);
+      if (segment) return segment;
     }
     if (typeof Outliner !== "undefined" && Outliner.selected && Outliner.selected.length) {
-      return nearestAncestorWithRole(Outliner.selected[0], ROLE_SEGMENT);
+      return segmentAround(Outliner.selected[0]);
     }
     return null;
   }
   function selectedLimb() {
-    const segment = selectedSegment();
-    if (segment) {
-      const limb = limbOf(segment);
-      if (limb) return limb;
-    }
     if (typeof Group !== "undefined" && Group.first_selected) {
       if (isLimb(Group.first_selected)) return Group.first_selected;
-      return nearestAncestorWithRole(Group.first_selected, ROLE_LIMB);
+      const limb = nearestAncestorWithRole(Group.first_selected, ROLE_LIMB);
+      if (limb) return limb;
+    }
+    if (typeof Outliner !== "undefined" && Outliner.selected && Outliner.selected.length) {
+      return nearestAncestorWithRole(Outliner.selected[0], ROLE_LIMB);
     }
     return null;
   }
@@ -427,6 +496,7 @@
       for (const child of node.children) {
         if (isBone(child)) continue;
         if (isSegment(child)) continue;
+        if (isLimb(child)) continue;
         if (isGroup(child)) {
           walk(child);
         } else if (child.export !== false) {
@@ -1148,6 +1218,7 @@
       if (found || !node.children) return;
       for (const child of node.children) {
         if (found) return;
+        if (isLimb(child)) continue;
         if (isTarget(child) && targetTypeOf(child) === type) {
           found = child;
           return;
@@ -1173,6 +1244,21 @@
     const direction = normalize(subtract(position, root));
     return direction[0] || direction[1] || direction[2] ? direction : null;
   }
+  function partTransformOf(segment) {
+    const transform = modelTransformOf(segment);
+    const direction = applyQuaternion(transform.quaternion, [0, 0, 1]);
+    return {
+      position: add(transform.position, scale(direction, lengthOf(segment) / 2)),
+      direction
+    };
+  }
+  function attachmentOffsetOf(limb, parentSegment) {
+    const segments = chainOf(limb);
+    if (!segments.length) return [0, 0, 0];
+    const root = modelTransformOf(segments[0]).position;
+    const parent = partTransformOf(parentSegment);
+    return worldToPart(parent.direction, subtract(root, parent.position));
+  }
   function describeLimb(limb) {
     const segments = chainOf(limb).filter((segment) => lengthOf(segment) > 0);
     if (!segments.length) return null;
@@ -1183,6 +1269,7 @@
       segments,
       target,
       primeTarget: primeTargetOf(limb),
+      parentSegment: parentSegmentOf(limb),
       lengths: segments.map(lengthOf)
     };
   }
@@ -1190,18 +1277,32 @@
     if (entry.segments.length !== description.segments.length) return false;
     if (entry.target !== description.target) return false;
     if (entry.primeTarget !== description.primeTarget) return false;
+    if (entry.parentSegment !== description.parentSegment) return false;
     return entry.segments.every(
       (segment, i) => segment === description.segments[i] && entry.chain.parts[i].length === description.lengths[i] / UNITS_PER_BLOCK
     );
   }
-  function buildChain(description) {
-    const root = scale(modelTransformOf(description.segments[0]).position, 1 / UNITS_PER_BLOCK);
+  function rootOf(description, posed) {
+    if (description.parentSegment) {
+      const parent = posed.get(description.parentSegment) || scaleTransform(partTransformOf(description.parentSegment), 1 / UNITS_PER_BLOCK);
+      const offset = scale(
+        attachmentOffsetOf(description.limb, description.parentSegment),
+        1 / UNITS_PER_BLOCK
+      );
+      return add(parent.position, partToWorld(parent.direction, offset));
+    }
+    return scale(modelTransformOf(description.segments[0]).position, 1 / UNITS_PER_BLOCK);
+  }
+  function scaleTransform(transform, factor) {
+    return { position: scale(transform.position, factor), direction: transform.direction };
+  }
+  function buildChain(description, posed) {
     const directions = description.segments.map(
       (segment) => applyQuaternion(modelTransformOf(segment).quaternion, [0, 0, 1])
     );
     return createChain(
       description.lengths.map((length) => length / UNITS_PER_BLOCK),
-      root,
+      rootOf(description, posed),
       directions
     );
   }
@@ -1251,7 +1352,8 @@
     step() {
       if (!isMarionetteFormat()) return;
       const live = /* @__PURE__ */ new Set();
-      for (const limb of allLimbs()) {
+      const posed = /* @__PURE__ */ new Map();
+      for (const limb of limbsInAttachOrder()) {
         const description = describeLimb(limb);
         if (!description) continue;
         live.add(limb);
@@ -1261,14 +1363,20 @@
             segments: description.segments,
             target: description.target,
             primeTarget: description.primeTarget,
-            chain: buildChain(description)
+            parentSegment: description.parentSegment,
+            chain: buildChain(description, posed)
           };
           this.entries.set(limb, entry);
         }
         const target = scale(targetPosition(description.target), 1 / UNITS_PER_BLOCK);
+        entry.chain.root = rootOf(description, posed);
         entry.chain.primeDirection = primeDirectionOf(description, entry.chain.root);
         solve(entry.chain, target);
         this.apply(entry);
+        entry.segments.forEach((segment, i) => posed.set(segment, {
+          position: entry.chain.parts[i].position,
+          direction: entry.chain.parts[i].direction
+        }));
       }
       for (const limb of [...this.entries.keys()]) {
         if (!live.has(limb)) {
@@ -1408,6 +1516,7 @@
     for (const child of node.children || []) {
       if (isBone(child)) continue;
       if (isSegment(child)) continue;
+      if (isLimb(child)) continue;
       if (child.export === false) continue;
       if (isGroup(child)) {
         childGroups.push(child);
@@ -1462,6 +1571,31 @@
     if (!direction[0] && !direction[1] && !direction[2]) return null;
     return worldDirection(direction);
   }
+  function resolveAttachment(limb, limbGroup, locationOf) {
+    if (isMisnestedLimb(limbGroup)) {
+      return [`Limb "${limb.name}" sits directly inside another limb with no segment between them, so there is nothing for it to attach to and it will be rooted on the entity. Move it into one of that limb's segments.`];
+    }
+    const parentSegment = parentSegmentOf(limbGroup);
+    if (!parentSegment) return [];
+    const location = locationOf.get(parentSegment);
+    if (!location) {
+      return [`Limb "${limb.name}" is nested in segment "${parentSegment.name}", which was not exported, so the limb will be rooted on the entity instead.`];
+    }
+    const offset = scale(attachmentOffsetOf(limbGroup, parentSegment), 1 / UNITS_PER_BLOCK);
+    limb.attachment = {
+      limb: location.limb.var,
+      partName: location.limb.segments[location.index].part.name,
+      partIndex: location.index,
+      offset
+    };
+    return unreproducibleOffsetWarnings(limb, parentSegment, offset);
+  }
+  function unreproducibleOffsetWarnings(limb, parentSegment, offset) {
+    const perpendicular = Math.hypot(offset[0], offset[1]);
+    if (perpendicular <= 1e-4) return [];
+    if (Math.abs(partTransformOf(parentSegment).direction[1]) <= 0.999) return [];
+    return [`Limb "${limb.name}" attaches ${perpendicular.toFixed(3)} blocks off the axis of segment "${parentSegment.name}", which points very nearly straight up or down. A part has no roll, so there is no defined sideways direction on it and the limb will not root where the editor shows it. Move the attachment onto that segment's axis, or angle the segment away from vertical.`];
+  }
   function collectRig(options = {}) {
     const isCube = options.isCube || ((el) => typeof Cube !== "undefined" && el instanceof Cube);
     const isMesh = options.isMesh || ((el) => typeof Mesh !== "undefined" && el instanceof Mesh);
@@ -1471,7 +1605,9 @@
     const warnings = [];
     const limbs = [];
     const segments = [];
-    for (const limbGroup of allLimbs()) {
+    const groupOf = /* @__PURE__ */ new Map();
+    const locationOf = /* @__PURE__ */ new Map();
+    for (const limbGroup of limbsInAttachOrder()) {
       const chain = chainOf(limbGroup);
       if (!chain.length) {
         warnings.push(`Limb "${limbGroup.name}" has no segments and was skipped.`);
@@ -1481,8 +1617,10 @@
         name: limbGroup.name,
         var: unique(javaIdentifier(limbGroup.name, "limb")),
         primeDirection: primeDirectionOf2(limbGroup, chain[0]),
+        attachment: null,
         segments: []
       };
+      groupOf.set(limb, limbGroup);
       for (const group of chain) {
         const bone = boneOf(group);
         if (!bone) {
@@ -1509,10 +1647,14 @@
           sizeXZ: bounds ? bounds.size[0] / UNITS_PER_BLOCK : lengthUnits / UNITS_PER_BLOCK,
           sizeY: bounds ? bounds.size[1] / UNITS_PER_BLOCK : lengthUnits / UNITS_PER_BLOCK
         };
+        locationOf.set(group, { limb, index: limb.segments.length });
         limb.segments.push(segment);
         segments.push(segment);
       }
       if (limb.segments.length) limbs.push(limb);
+    }
+    for (const limb of limbs) {
+      warnings.push(...resolveAttachment(limb, groupOf.get(limb), locationOf));
     }
     if (!limbs.length) warnings.push("No limbs with segments were found; nothing to export.");
     const textureWidth = options.textureWidth || typeof Project !== "undefined" && Project.texture_width || 16;
@@ -1645,7 +1787,11 @@ ${wrapNames(segmentNames)}
       );
       if (limb.primeDirection) {
         const [x, y, z] = limb.primeDirection;
-        calls.push(`				.primeDirection(new Vec3(${d(x)}, ${d(y)}, ${d(z)}))`);
+        calls.push(`				.bodyPrimeDirection(new Vec3(${d(x)}, ${d(y)}, ${d(z)}))`);
+      }
+      if (limb.attachment) {
+        const { limb: parent, partIndex, offset } = limb.attachment;
+        calls.push(`				.attachRoot(${parent}.parts()[${partIndex}], new Vec3(${d(offset[0])}, ${d(offset[1])}, ${d(offset[2])}))`);
       }
       return `		${limb.var} = Limb.builder(this)
 ${calls.join("\n")}
@@ -1659,7 +1805,7 @@ import net.jelly.marionette_lib.utility.Marionette;
 import net.jelly.marionette_lib.utility.MarionettePart;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.${names.baseClassImport};
-import net.minecraft.world.level.Level;${rig.limbs.some((limb) => limb.primeDirection) ? "\nimport net.minecraft.world.phys.Vec3;" : ""}
+import net.minecraft.world.level.Level;${rig.limbs.some((limb) => limb.primeDirection || limb.attachment) ? "\nimport net.minecraft.world.phys.Vec3;" : ""}
 import net.minecraftforge.entity.PartEntity;
 
 import java.util.List;
@@ -1801,6 +1947,13 @@ public class ${names.className}Renderer extends MobRenderer<${names.className}En
         name: limb.name,
         field: limb.var,
         prime_direction: limb.primeDirection,
+        prime_direction_space: limb.primeDirection ? "body" : null,
+        attachment: limb.attachment && {
+          limb: limb.attachment.limb,
+          part_name: limb.attachment.partName,
+          part_index: limb.attachment.partIndex,
+          offset: limb.attachment.offset
+        },
         segments: limb.segments.map((segment) => ({
           part_name: segment.part.name,
           length_units: segment.lengthUnits,
@@ -2088,6 +2241,131 @@ ${err && err.message}`
     };
   }
 
+  // src/nesting.js
+  var prompted = /* @__PURE__ */ new WeakSet();
+  function misnestedLimbs() {
+    const found = [];
+    for (const limb of allLimbs()) {
+      if (isMisnestedLimb(limb)) found.push(limb);
+      else prompted.delete(limb);
+    }
+    return found;
+  }
+  function nearestSegment(limb, segments) {
+    const chain = chainOf(limb);
+    if (!chain.length || !segments.length) return segments[0] || null;
+    const root = modelTransformOf(chain[0]).position;
+    let best = segments[0];
+    let bestDistance = Infinity;
+    for (const segment of segments) {
+      const distance2 = distanceSquared(root, modelTransformOf(segment).position);
+      if (distance2 < bestDistance) {
+        bestDistance = distance2;
+        best = segment;
+      }
+    }
+    return best;
+  }
+  function attachLimbTo(limb, segment) {
+    Undo.initEdit({ outliner: true, groups: [limb, segment] });
+    const moved = limb.addTo(segment);
+    if (moved === void 0) {
+      Undo.finishEdit("Nest Marionette limb");
+      Blockbench.showMessageBox({
+        title: "Marionette",
+        icon: "error",
+        message: `Could not move "${limb.name}" into "${segment.name}".`
+      });
+      return null;
+    }
+    Undo.finishEdit("Nest Marionette limb", { outliner: true, groups: [limb, segment] });
+    Canvas.updateView({ groups: [limb, segment], group_aspects: { transform: true } });
+    return limb;
+  }
+  function buildPrompt(limb) {
+    const enclosing = enclosingLimbOf(limb);
+    const segments = enclosing ? chainOf(enclosing) : [];
+    if (!segments.length) {
+      Blockbench.showMessageBox({
+        title: "Marionette",
+        icon: "warning",
+        message: `"${limb.name}" is nested directly inside "${enclosing ? enclosing.name : "another limb"}", which has no segments to attach it to. Add a segment there first, then move "${limb.name}" into it.`
+      });
+      return null;
+    }
+    const options = {};
+    for (const segment of segments) options[segment.uuid] = segment.name;
+    const suggested = nearestSegment(limb, segments);
+    return new Dialog({
+      id: "marionette_nest_limb",
+      title: "Marionette",
+      form: {
+        info: {
+          type: "info",
+          text: `"${limb.name}" sits directly inside "${enclosing.name}". A limb attaches to a segment, not to another limb, so pick the segment it hangs off. Its root offset is then measured in that segment's own frame.`
+        },
+        segment: {
+          label: "Attach to segment",
+          type: "select",
+          options,
+          default: suggested && suggested.uuid
+        }
+      },
+      onConfirm(form) {
+        const segment = segments.find((candidate) => candidate.uuid === form.segment);
+        if (segment) attachLimbTo(limb, segment);
+        this.hide();
+      }
+    });
+  }
+  function installNesting() {
+    let pending = null;
+    function review() {
+      if (!isMarionetteFormat()) return;
+      for (const limb of misnestedLimbs()) {
+        if (prompted.has(limb)) continue;
+        prompted.add(limb);
+        const dialog = buildPrompt(limb);
+        if (dialog) dialog.show();
+        return;
+      }
+    }
+    const listener = Blockbench.on("finish_edit", () => {
+      if (pending !== null) return;
+      pending = setTimeout(() => {
+        pending = null;
+        review();
+      }, 0);
+    });
+    return () => {
+      if (pending !== null) clearTimeout(pending);
+      listener.delete();
+    };
+  }
+
+  // src/ik.js
+  var STOCK_IK_PROPERTIES = ["ik_target", "ik_source", "ik_pole", "lock_ik_target_rotation"];
+  function hiddenInPanel(original) {
+    return (instance) => Condition(original, instance) && (!!instance || !isMarionetteFormat());
+  }
+  function installIkFieldHiding() {
+    const patched = [];
+    for (const name of STOCK_IK_PROPERTIES) {
+      const properties = typeof NullObject !== "undefined" && NullObject.properties;
+      const property = properties && properties[name];
+      if (!property) {
+        console.warn(`[Marionette] NullObject.${name} is missing; leaving that IK field visible.`);
+        continue;
+      }
+      const original = property.condition;
+      property.condition = hiddenInPanel(original);
+      patched.push({ property, original });
+    }
+    return () => {
+      for (const { property, original } of patched) property.condition = original;
+    };
+  }
+
   // src/index.js
   (function() {
     let teardowns = [];
@@ -2136,6 +2414,8 @@ The rest of the plugin is still loaded. Please report this with the full error f
         step("selection repair", installSelectionFix);
         step("Java exporter", installExport);
         step("simulation mode", installSimulation);
+        step("nesting prompt", installNesting);
+        step("Blockbench IK field hiding", installIkFieldHiding);
         console.log("[Marionette] loaded; format registered as", FORMAT_ID);
       },
       onunload() {

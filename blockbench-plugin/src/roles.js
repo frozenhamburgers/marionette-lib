@@ -82,6 +82,58 @@ export function limbOf(segment) {
 	return nearestAncestorWithRole(segment, ROLE_LIMB);
 }
 
+// nearest ancestor holding a rig role, whichever of the two comes first, so plain organisational
+// folders in between are transparent but a segment shadows the limb above it
+function nearestRigAncestor(node) {
+	let parent = node && node.parent;
+	while (parent && parent !== 'root') {
+		if (isSegment(parent) || isLimb(parent)) return parent;
+		parent = parent.parent;
+	}
+	return null;
+}
+
+// segment a nested limb hangs off, null for a top-level limb
+export function parentSegmentOf(limb) {
+	const ancestor = nearestRigAncestor(limb);
+	return isSegment(ancestor) ? ancestor : null;
+}
+
+export function enclosingLimbOf(limb) {
+	return nearestAncestorWithRole(limb, ROLE_LIMB);
+}
+
+// limb sitting straight inside another limb with no segment between them: nothing owns an attachment
+// point for it, so there is nowhere for its root to go
+export function isMisnestedLimb(limb) {
+	return isLimb(limb) && isLimb(nearestRigAncestor(limb));
+}
+
+// parents first, since an attachment names a part of its parent's chain and the generated constructor
+// assigns limb fields in this order.
+// Group.all is depth first, so a nested limb already trails the limb it hangs off and this sort is
+// currently a no-op. it is here to make the requirement explicit instead of incidental to that order,
+// and the outliner being a tree is what keeps it from cycling
+export function limbsInAttachOrder() {
+	const limbs = allLimbs();
+	const order = [];
+	const placed = new Set();
+
+	for (const limb of limbs) place(limb);
+	return order;
+
+	function place(limb) {
+		if (placed.has(limb)) return;
+		placed.add(limb);
+
+		const segment = parentSegmentOf(limb);
+		const parent = segment && limbOf(segment);
+		if (parent && parent !== limb) place(parent);
+
+		order.push(limb);
+	}
+}
+
 // depth-first in outliner order gives the right ordering for both layouts the exporter accepts:
 // IMPORTANT: nested chains read parent-then-child, flat chains read top-to-bottom. segments nested inside another segment are still collected since the exporter flattens either way
 export function chainOf(limb) {
@@ -92,6 +144,8 @@ export function chainOf(limb) {
 	function walk(node) {
 		if (!node || !node.children) return;
 		for (const child of node.children) {
+			// a nested limb owns its own chain, it attaches to a segment rather than extending one
+			if (isLimb(child)) continue;
 			if (isSegment(child)) out.push(child);
 			// recurse regardless of role so segments wrapped in plain organisational folders are still found
 			if (isGroup(child)) walk(child);
@@ -105,28 +159,39 @@ export function childSegmentsOf(segment) {
 	return segment.children.filter(isSegment);
 }
 
+// segment `node` sits in, or null. a selected limb resolves to no segment at all, even though it is
+// nested in one: the context is that limb, not the segment holding it, or adding to a nested limb would
+// land everything in its parent chain instead
+function segmentAround(node) {
+	if (isSegment(node)) return node;
+	if (isLimb(node)) return null;
+	return isSegment(nearestRigAncestor(node)) ? nearestRigAncestor(node) : null;
+}
+
 // segment group current selection is "in": a selected segment, the segment a selected element sits inside, or null
 export function selectedSegment() {
 	if (typeof Group !== 'undefined' && Group.first_selected) {
-		if (isSegment(Group.first_selected)) return Group.first_selected;
-		const ancestor = nearestAncestorWithRole(Group.first_selected, ROLE_SEGMENT);
-		if (ancestor) return ancestor;
+		const segment = segmentAround(Group.first_selected);
+		if (segment) return segment;
 	}
 	if (typeof Outliner !== 'undefined' && Outliner.selected && Outliner.selected.length) {
-		return nearestAncestorWithRole(Outliner.selected[0], ROLE_SEGMENT);
+		return segmentAround(Outliner.selected[0]);
 	}
 	return null;
 }
 
+// nearest enclosing limb, which for a nested limb is that limb itself.
+// resolved straight off the selection rather than via selectedSegment: going through the segment walks
+// out past the limb boundary and lands on whichever limb owns that segment, so every nested limb used to
+// resolve to the outermost one
 export function selectedLimb() {
-	const segment = selectedSegment();
-	if (segment) {
-		const limb = limbOf(segment);
-		if (limb) return limb;
-	}
 	if (typeof Group !== 'undefined' && Group.first_selected) {
 		if (isLimb(Group.first_selected)) return Group.first_selected;
-		return nearestAncestorWithRole(Group.first_selected, ROLE_LIMB);
+		const limb = nearestAncestorWithRole(Group.first_selected, ROLE_LIMB);
+		if (limb) return limb;
+	}
+	if (typeof Outliner !== 'undefined' && Outliner.selected && Outliner.selected.length) {
+		return nearestAncestorWithRole(Outliner.selected[0], ROLE_LIMB);
 	}
 	return null;
 }
@@ -143,6 +208,7 @@ export function ownGeometryOf(segment) {
 		for (const child of node.children) {
 			if (isBone(child)) continue;
 			if (isSegment(child)) continue; // child segments own their geometry
+			if (isLimb(child)) continue; // as does a nested limb, all the way down
 			if (isGroup(child)) {
 				walk(child);
 			} else if (child.export !== false) {

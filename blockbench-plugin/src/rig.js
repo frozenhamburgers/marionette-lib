@@ -3,14 +3,16 @@
 
 import { UNITS_PER_BLOCK } from './constants.js';
 import {
-	allLimbs, chainOf, boneOf, exportOriginOf, lengthOf, ownGeometryOf,
-	isGroup, isBone, isSegment,
+	chainOf, boneOf, exportOriginOf, lengthOf, ownGeometryOf,
+	isGroup, isBone, isSegment, isLimb, isMisnestedLimb, limbsInAttachOrder, parentSegmentOf,
 } from './roles.js';
 import {
 	cubeCorners, meshVertexPoints, boundsOfPoints, isUnrotated, worldDirection,
 } from './geometry.js';
-import { primeTargetOf, targetPosition, modelTransformOf } from './simulate.js';
-import { normalize, subtract } from './fabrik.js';
+import {
+	primeTargetOf, targetPosition, modelTransformOf, attachmentOffsetOf, partTransformOf,
+} from './simulate.js';
+import { normalize, subtract, scale } from './fabrik.js';
 
 export function javaIdentifier(name, fallback = 'part') {
 	let cleaned = String(name || '').replace(/[^A-Za-z0-9_]/g, '_').replace(/^_+/, '');
@@ -86,7 +88,7 @@ function sameVector(a, b) {
 }
 
 // builds part tree for one segment (segment part, rotated-cube subgroups, plain nested sub-groups)
-// child segments excluded, they become top-level parts of their own
+// child segments excluded, and nested limbs with them, they become top-level parts of their own
 function buildPart(node, origin, unique, integerSize, options) {
 	const directCubes = [];
 	const childGroups = [];
@@ -94,6 +96,9 @@ function buildPart(node, origin, unique, integerSize, options) {
 	for (const child of node.children || []) {
 		if (isBone(child)) continue;
 		if (isSegment(child)) continue;
+		// a nested limb's segments become top-level parts of their own, folding it in here would emit
+		// its geometry a second time as a child of this part
+		if (isLimb(child)) continue;
 		if (child.export === false) continue;
 
 		if (isGroup(child)) {
@@ -158,6 +163,48 @@ function primeDirectionOf(limbGroup, firstSegment) {
 	return worldDirection(direction);
 }
 
+// fills in limb.attachment: which part of which other limb this one roots on, and where on it
+function resolveAttachment(limb, limbGroup, locationOf) {
+	if (isMisnestedLimb(limbGroup)) {
+		return [`Limb "${limb.name}" sits directly inside another limb with no segment between them, ` +
+			`so there is nothing for it to attach to and it will be rooted on the entity. Move it into ` +
+			`one of that limb's segments.`];
+	}
+
+	const parentSegment = parentSegmentOf(limbGroup);
+	if (!parentSegment) return [];
+
+	const location = locationOf.get(parentSegment);
+	if (!location) {
+		return [`Limb "${limb.name}" is nested in segment "${parentSegment.name}", which was not ` +
+			`exported, so the limb will be rooted on the entity instead.`];
+	}
+
+	const offset = scale(attachmentOffsetOf(limbGroup, parentSegment), 1 / UNITS_PER_BLOCK);
+	limb.attachment = {
+		limb: location.limb.var,
+		partName: location.limb.segments[location.index].part.name,
+		partIndex: location.index,
+		offset,
+	};
+
+	return unreproducibleOffsetWarnings(limb, parentSegment, offset);
+}
+
+// a part carries a direction and no roll, so which way "sideways" points is undefined once the
+// direction goes vertical, and only the axial component of an offset survives the trip. see
+// MarionettePart.partToWorld
+function unreproducibleOffsetWarnings(limb, parentSegment, offset) {
+	const perpendicular = Math.hypot(offset[0], offset[1]);
+	if (perpendicular <= 1e-4) return [];
+	if (Math.abs(partTransformOf(parentSegment).direction[1]) <= 0.999) return [];
+
+	return [`Limb "${limb.name}" attaches ${perpendicular.toFixed(3)} blocks off the axis of segment ` +
+		`"${parentSegment.name}", which points very nearly straight up or down. A part has no roll, so ` +
+		`there is no defined sideways direction on it and the limb will not root where the editor shows ` +
+		`it. Move the attachment onto that segment's axis, or angle the segment away from vertical.`];
+}
+
 /** @returns {{limbs: Array, segments: Array, textureWidth: number, textureHeight: number, shadowRadius: number, warnings: string[]}} */
 export function collectRig(options = {}) {
 	const isCube = options.isCube || (el => typeof Cube !== 'undefined' && el instanceof Cube);
@@ -172,7 +219,13 @@ export function collectRig(options = {}) {
 	const limbs = [];
 	const segments = [];
 
-	for (const limbGroup of allLimbs()) {
+	// group is kept out of the limb description itself so it stays plain data for the java emitters
+	const groupOf = new Map();
+	const locationOf = new Map();
+
+	// parents before children, so a limb's attachment can name a part of a chain already collected and
+	// the generated constructor assigns the parent's field before the child reads it
+	for (const limbGroup of limbsInAttachOrder()) {
 		const chain = chainOf(limbGroup);
 
 		if (!chain.length) {
@@ -184,8 +237,10 @@ export function collectRig(options = {}) {
 			name: limbGroup.name,
 			var: unique(javaIdentifier(limbGroup.name, 'limb')),
 			primeDirection: primeDirectionOf(limbGroup, chain[0]),
+			attachment: null,
 			segments: [],
 		};
+		groupOf.set(limb, limbGroup);
 
 		for (const group of chain) {
 			const bone = boneOf(group);
@@ -221,11 +276,16 @@ export function collectRig(options = {}) {
 					: lengthUnits / UNITS_PER_BLOCK,
 			};
 
+			locationOf.set(group, { limb, index: limb.segments.length });
 			limb.segments.push(segment);
 			segments.push(segment);
 		}
 
 		if (limb.segments.length) limbs.push(limb);
+	}
+
+	for (const limb of limbs) {
+		warnings.push(...resolveAttachment(limb, groupOf.get(limb), locationOf));
 	}
 
 	if (!limbs.length) warnings.push('No limbs with segments were found; nothing to export.');

@@ -105,7 +105,12 @@ export function registerTargetProperty() {
 	return new Property(NullObject, 'enum', 'marionette_target', {
 		default: TARGET_FABRIK,
 		values: [TARGET_FABRIK, TARGET_PRIME],
-		condition: { formats: [FORMAT_ID] },
+		// selecting a group marks every descendant selected too (Group.select), so a limb holding a target
+		// would otherwise show this field as if it were the limb's own. an `instance` means the question
+		// is whether to keep a stored value on merge/copy/reset, not whether to draw the input, and that
+		// answer must never depend on the selection or loading a file would drop the value
+		condition: instance => Format && Format.id === FORMAT_ID
+			&& (!!instance || !Group.first_selected),
 		label: 'Marionette target',
 		inputs: {
 			element_panel: {

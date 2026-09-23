@@ -49,6 +49,8 @@ public class Limb<T extends MarionettePart<?>> {
         private final List<T> parts = new ArrayList<>();
         private boolean followRootOnly = false;
         private Vec3 root = null;
+        private MarionettePart<?> rootPart = null;
+        private Vec3 rootOffset = Vec3.ZERO;
         private Vec3 primeDirection = null;
         private Vec3 bodyPrimeDirection = null;
 
@@ -77,6 +79,15 @@ public class Limb<T extends MarionettePart<?>> {
         /** See {@link FabrikAnimator#setRoot(Vec3)} */
         public Builder<P, T> root(Vec3 root) {
             this.root = root;
+            this.rootPart = null;
+            return this;
+        }
+
+        /** See {@link FabrikAnimator#attachRoot(MarionettePart, Vec3)} */
+        public Builder<P, T> attachRoot(MarionettePart<?> part, Vec3 offset) {
+            this.rootPart = part;
+            this.rootOffset = offset;
+            this.root = null;
             return this;
         }
 
@@ -99,6 +110,7 @@ public class Limb<T extends MarionettePart<?>> {
             FabrikAnimator animator = new FabrikAnimator(parent, array);
             animator.setFollowRootOnly(followRootOnly);
             if (root != null) animator.setRoot(root);
+            if (rootPart != null) animator.attachRoot(rootPart, rootOffset);
             if (primeDirection != null) animator.setPrimeDirection(primeDirection);
             if (bodyPrimeDirection != null) animator.setBodyPrimeDirection(bodyPrimeDirection);
             return new Limb<>(array, animator);

@@ -11,6 +11,8 @@ import { installResizeRemap } from './resize.js';
 import { installSelectionFix } from './selection.js';
 import { installExport } from './export.js';
 import { installSimulation } from './simulate_actions.js';
+import { installNesting } from './nesting.js';
+import { installIkFieldHiding } from './ik.js';
 
 (function () {
 	let teardowns = [];
@@ -66,6 +68,8 @@ import { installSimulation } from './simulate_actions.js';
 			step('selection repair', installSelectionFix);
 			step('Java exporter', installExport);
 			step('simulation mode', installSimulation);
+			step('nesting prompt', installNesting);
+			step('Blockbench IK field hiding', installIkFieldHiding);
 
 			console.log('[Marionette] loaded; format registered as', FORMAT_ID);
 		},
