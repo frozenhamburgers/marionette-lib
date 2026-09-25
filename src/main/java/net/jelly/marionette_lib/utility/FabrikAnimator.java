@@ -17,7 +17,7 @@ public class FabrikAnimator {
     private MarionettePart<?> rootPart = null;
     private Vec3 rootOffset = Vec3.ZERO;
     private Vec3 primeDirection = null;
-    private Vec3 bodyPrimeDirection = null;
+    private Vec3 rootPrimeDirection = null;
 
     public FabrikAnimator(Entity owner, MarionettePart<?>[] allParts) {
         this.owner = owner;
@@ -82,7 +82,7 @@ public class FabrikAnimator {
     /** re-primes along {@code direction} before every solve, see {@link #primeMultipart(Vec3)}. clear with {@link #clearPrimeDirection()} */
     public void setPrimeDirection(Vec3 direction) {
         this.primeDirection = direction == null ? null : direction.normalize();
-        this.bodyPrimeDirection = null;
+        this.rootPrimeDirection = null;
     }
 
     public Vec3 getPrimeDirection() {
@@ -90,31 +90,36 @@ public class FabrikAnimator {
     }
 
     /**
-     * Same as {@link #setPrimeDirection(Vec3)} but {@code direction} is read in the owner's own frame, +Z forward,
-     * and rotated by its yaw before each solve, so the bias follows the entity around instead of pointing at a fixed
-     * compass heading. This is what a direction authored in Blockbench means, since a rig there has no yaw.
+     * Same as {@link #setPrimeDirection(Vec3)} but {@code direction} is read in the frame the chain is rooted
+     * in, +Z forward, and resolved there before each solve, so the bias follows whatever the chain hangs off
+     * instead of pointing at a fixed compass heading, matches blockbench
      * <p>
-     * Yaw only. Any other axis, e.g. pitch on a flyer, MUST be folded into the vector yourself, per tick, via
-     * {@link #setPrimeDirection(Vec3)}.
+     * prime directions are always in the frame the limb is rooted in. If parent segment -> prime direction
+     * relative to the segment's frame, if no parent segment -> prime direction relative to entity's body frame (yaw only)
+     * Any changes to this default system must be folded in yourself via {@link #setPrimeDirection(Vec3)}
+     * <p>
+     * frame is picked at solve time, so {@link #setRoot(Vec3)} or {@link #detachRoot()} on an attached
+     * chain silently rereads an already-set direction as an entity-frame one.
      */
-    public void setBodyPrimeDirection(Vec3 direction) {
-        this.bodyPrimeDirection = direction == null ? null : direction.normalize();
+    public void setRootPrimeDirection(Vec3 direction) {
+        this.rootPrimeDirection = direction == null ? null : direction.normalize();
         this.primeDirection = null;
     }
 
-    public Vec3 getBodyPrimeDirection() {
-        return bodyPrimeDirection;
+    public Vec3 getRootPrimeDirection() {
+        return rootPrimeDirection;
     }
 
     public void clearPrimeDirection() {
         this.primeDirection = null;
-        this.bodyPrimeDirection = null;
+        this.rootPrimeDirection = null;
     }
 
-    // -yaw matches Entity.calculateViewVector, which builds the same rotation by hand
+    // -yaw matches Entity.calculateViewVector
     protected Vec3 resolvePrimeDirection() {
-        if (bodyPrimeDirection != null) return bodyPrimeDirection.yRot(-owner.getYRot() * Mth.DEG_TO_RAD);
-        return primeDirection;
+        if (rootPrimeDirection == null) return primeDirection;
+        if (rootPart != null) return rootPart.partToWorld(rootPrimeDirection);
+        return rootPrimeDirection.yRot(-owner.getYRot() * Mth.DEG_TO_RAD);
     }
 
     protected Vec3 root() {

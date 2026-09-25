@@ -52,7 +52,7 @@ public class Limb<T extends MarionettePart<?>> {
         private MarionettePart<?> rootPart = null;
         private Vec3 rootOffset = Vec3.ZERO;
         private Vec3 primeDirection = null;
-        private Vec3 bodyPrimeDirection = null;
+        private Vec3 rootPrimeDirection = null;
 
         private Builder(P parent, PartFactory<P, T> factory) {
             this.parent = parent;
@@ -97,9 +97,9 @@ public class Limb<T extends MarionettePart<?>> {
             return this;
         }
 
-        /** See {@link FabrikAnimator#setBodyPrimeDirection(Vec3)} */
-        public Builder<P, T> bodyPrimeDirection(Vec3 bodyPrimeDirection) {
-            this.bodyPrimeDirection = bodyPrimeDirection;
+        /** See {@link FabrikAnimator#setRootPrimeDirection(Vec3)} */
+        public Builder<P, T> rootPrimeDirection(Vec3 rootPrimeDirection) {
+            this.rootPrimeDirection = rootPrimeDirection;
             return this;
         }
 
@@ -112,7 +112,7 @@ public class Limb<T extends MarionettePart<?>> {
             if (root != null) animator.setRoot(root);
             if (rootPart != null) animator.attachRoot(rootPart, rootOffset);
             if (primeDirection != null) animator.setPrimeDirection(primeDirection);
-            if (bodyPrimeDirection != null) animator.setBodyPrimeDirection(bodyPrimeDirection);
+            if (rootPrimeDirection != null) animator.setRootPrimeDirection(rootPrimeDirection);
             return new Limb<>(array, animator);
         }
     }

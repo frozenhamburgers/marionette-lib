@@ -1568,19 +1568,24 @@
     }
     return boundsOfPoints(points);
   }
-  function primeDirectionOf2(limbGroup, firstSegment) {
+  function primeDirectionOf2(limbGroup, firstSegment, parentSegment) {
     const prime = primeTargetOf(limbGroup);
     if (!prime) return null;
     const root = modelTransformOf(firstSegment).position;
     const direction = normalize(subtract(targetPosition(prime), root));
     if (!direction[0] && !direction[1] && !direction[2]) return null;
-    return worldDirection(direction);
+    if (!parentSegment) return worldDirection(direction);
+    return worldToPart(partTransformOf(parentSegment).direction, direction);
   }
-  function resolveAttachment(limb, limbGroup, locationOf) {
-    if (isMisnestedLimb(limbGroup)) {
+  function nestingOf(limbGroup) {
+    if (isMisnestedLimb(limbGroup)) return { misnested: true, parentSegment: null };
+    return { misnested: false, parentSegment: parentSegmentOf(limbGroup) };
+  }
+  function resolveAttachment(limb, limbGroup, nesting, locationOf) {
+    if (nesting.misnested) {
       return [`Limb "${limb.name}" sits directly inside another limb with no segment between them, so there is nothing for it to attach to and it will be rooted on the entity. Move it into one of that limb's segments.`];
     }
-    const parentSegment = parentSegmentOf(limbGroup);
+    const parentSegment = nesting.parentSegment;
     if (!parentSegment) return [];
     const location = locationOf.get(parentSegment);
     if (!location) {
@@ -1593,13 +1598,18 @@
       partIndex: location.index,
       offset
     };
-    return unreproducibleOffsetWarnings(limb, parentSegment, offset);
-  }
-  function unreproducibleOffsetWarnings(limb, parentSegment, offset) {
+    if (!losesPerpendicular(parentSegment, offset)) return [];
     const perpendicular = Math.hypot(offset[0], offset[1]);
-    if (perpendicular <= 1e-4) return [];
-    if (Math.abs(partTransformOf(parentSegment).direction[1]) <= 0.999) return [];
     return [`Limb "${limb.name}" attaches ${perpendicular.toFixed(3)} blocks off the axis of segment "${parentSegment.name}", which points very nearly straight up or down. A part has no roll, so there is no defined sideways direction on it and the limb will not root where the editor shows it. Move the attachment onto that segment's axis, or angle the segment away from vertical.`];
+  }
+  function primeDirectionWarnings(limb, nesting) {
+    if (!nesting.parentSegment || !limb.primeDirection) return [];
+    if (!losesPerpendicular(nesting.parentSegment, limb.primeDirection)) return [];
+    return [`Limb "${limb.name}" is primed across the axis of segment "${nesting.parentSegment.name}", which points very nearly straight up or down. A part has no roll, so there is no defined sideways direction on it and the bias will swing around as that segment wobbles. Prime it along the segment's axis, or angle the segment away from vertical.`];
+  }
+  function losesPerpendicular(parentSegment, vector) {
+    if (Math.hypot(vector[0], vector[1]) <= 1e-4) return false;
+    return Math.abs(partTransformOf(parentSegment).direction[1]) > 0.999;
   }
   function collectRig(options = {}) {
     const isCube = options.isCube || ((el) => typeof Cube !== "undefined" && el instanceof Cube);
@@ -1612,20 +1622,23 @@
     const segments = [];
     const groupOf = /* @__PURE__ */ new Map();
     const locationOf = /* @__PURE__ */ new Map();
+    const nestingFor = /* @__PURE__ */ new Map();
     for (const limbGroup of limbsInAttachOrder()) {
       const chain = chainOf(limbGroup);
       if (!chain.length) {
         warnings.push(`Limb "${limbGroup.name}" has no segments and was skipped.`);
         continue;
       }
+      const nesting = nestingOf(limbGroup);
       const limb = {
         name: limbGroup.name,
         var: unique(javaIdentifier(limbGroup.name, "limb")),
-        primeDirection: primeDirectionOf2(limbGroup, chain[0]),
+        primeDirection: primeDirectionOf2(limbGroup, chain[0], nesting.parentSegment),
         attachment: null,
         segments: []
       };
       groupOf.set(limb, limbGroup);
+      nestingFor.set(limb, nesting);
       for (const group of chain) {
         const bone = boneOf(group);
         if (!bone) {
@@ -1659,7 +1672,9 @@
       if (limb.segments.length) limbs.push(limb);
     }
     for (const limb of limbs) {
-      warnings.push(...resolveAttachment(limb, groupOf.get(limb), locationOf));
+      const nesting = nestingFor.get(limb);
+      warnings.push(...resolveAttachment(limb, groupOf.get(limb), nesting, locationOf));
+      warnings.push(...primeDirectionWarnings(limb, nesting));
     }
     if (!limbs.length) warnings.push("No limbs with segments were found; nothing to export.");
     const textureWidth = options.textureWidth || typeof Project !== "undefined" && Project.texture_width || 16;
@@ -1792,7 +1807,7 @@ ${wrapNames(segmentNames)}
       );
       if (limb.primeDirection) {
         const [x, y, z] = limb.primeDirection;
-        calls.push(`				.bodyPrimeDirection(new Vec3(${d(x)}, ${d(y)}, ${d(z)}))`);
+        calls.push(`				.rootPrimeDirection(new Vec3(${d(x)}, ${d(y)}, ${d(z)}))`);
       }
       if (limb.attachment) {
         const { limb: parent, partIndex, offset } = limb.attachment;
@@ -1952,7 +1967,7 @@ public class ${names.className}Renderer extends MobRenderer<${names.className}En
         name: limb.name,
         field: limb.var,
         prime_direction: limb.primeDirection,
-        prime_direction_space: limb.primeDirection ? "body" : null,
+        prime_direction_space: limb.primeDirection ? limb.attachment ? "part" : "body" : null,
         attachment: limb.attachment && {
           limb: limb.attachment.limb,
           part_name: limb.attachment.partName,

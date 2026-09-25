@@ -57,21 +57,25 @@ public class TestWyvernEntity extends Phantom implements Marionette {
 
         limb2 = Limb.builder(this)
                 .segments(3, 0.125F, 0.125F, 0.5F)
+                .rootPrimeDirection(new Vec3(0.442511, 0.725928, 0.52651))
                 .attachRoot(limb.parts()[2], new Vec3(0.032551, 0.004311, -0.178872))
                 .build();
 
         limb3 = Limb.builder(this)
                 .segments(3, 0.125F, 0.125F, 0.5F)
+                .rootPrimeDirection(new Vec3(-0.480269, 0.736601, 0.476195))
                 .attachRoot(limb.parts()[2], new Vec3(-0.042449, 0.004311, -0.178872))
                 .build();
 
         limb4 = Limb.builder(this)
                 .segments(3, 0.125F, 0.125F, 0.5F)
+                .rootPrimeDirection(new Vec3(0.638664, 0.658547, -0.398024))
                 .attachRoot(limb.parts()[4], new Vec3(0.032551, 0.004311, -0.178872))
                 .build();
 
         limb5 = Limb.builder(this)
                 .segments(3, 0.125F, 0.125F, 0.5F)
+                .rootPrimeDirection(new Vec3(-0.609997, 0.627631, -0.483718))
                 .attachRoot(limb.parts()[4], new Vec3(-0.042449, 0.004311, -0.178872))
                 .build();
 

@@ -53,60 +53,60 @@ public class TestWyvernModel extends MarionetteModel<TestWyvernEntity> {
         PartDefinition segment4_bone = segment2.addOrReplaceChild("segment4_bone", CubeListBuilder.create(), PartPose.offsetAndRotation(0.0F, 0.0F, -30.0F, -1.5708F, 0.0F, 0.0F));
 
         PartDefinition segment6 = partdefinition.addOrReplaceChild("segment6", CubeListBuilder.create()
-                .texOffs(26, 0).addBox(-1F, -1.0F, -4.0F, 2.0F, 2.0F, 8.0F, new CubeDeformation(0.0F)), PartPose.offset(0.0F, 24.0F, 0.0F));
+                .texOffs(26, 0).addBox(-1.0F, -1.0F, -4.0F, 2.0F, 2.0F, 8.0F, new CubeDeformation(0.0F)), PartPose.offset(0.0F, 24.0F, 0.0F));
 
         PartDefinition segment7 = partdefinition.addOrReplaceChild("segment7", CubeListBuilder.create()
-                .texOffs(0, 35).addBox(-1F, -1.0F, -4.0F, 2.0F, 2.0F, 8.0F, new CubeDeformation(0.0F)), PartPose.offset(0.0F, 24.0F, 0.0F));
+                .texOffs(0, 35).addBox(-1.0F, -1.0F, -4.0F, 2.0F, 2.0F, 8.0F, new CubeDeformation(0.0F)), PartPose.offset(0.0F, 24.0F, 0.0F));
 
         PartDefinition segment8 = partdefinition.addOrReplaceChild("segment8", CubeListBuilder.create()
-                .texOffs(20, 35).addBox(-1F, -1.0F, -4.0F, 2.0F, 2.0F, 8.0F, new CubeDeformation(0.0F)), PartPose.offset(0.0F, 24.0F, 0.0F));
+                .texOffs(20, 35).addBox(-1.0F, -1.0F, -4.0F, 2.0F, 2.0F, 8.0F, new CubeDeformation(0.0F)), PartPose.offset(0.0F, 24.0F, 0.0F));
 
         PartDefinition segment9 = partdefinition.addOrReplaceChild("segment9", CubeListBuilder.create()
-                .texOffs(44, 20).addBox(-1F, -1.0F, -4.0F, 2.0F, 2.0F, 8.0F, new CubeDeformation(0.0F)), PartPose.offset(0.0F, 24.0F, 0.0F));
+                .texOffs(44, 20).addBox(-1.0F, -1.0F, -4.0F, 2.0F, 2.0F, 8.0F, new CubeDeformation(0.0F)), PartPose.offset(0.0F, 24.0F, 0.0F));
 
         PartDefinition segment6_bone = segment9.addOrReplaceChild("segment6_bone", CubeListBuilder.create(), PartPose.offsetAndRotation(0.3208F, 0.069F, -31.138F, -1.5708F, 0.0F, 0.0F));
 
         PartDefinition segment10 = partdefinition.addOrReplaceChild("segment10", CubeListBuilder.create()
-                .texOffs(40, 35).addBox(-1F, -1.0F, -4.0F, 2.0F, 2.0F, 8.0F, new CubeDeformation(0.0F)), PartPose.offset(0.0F, 24.0F, 0.0F));
+                .texOffs(40, 35).addBox(-1.0F, -1.0F, -4.0F, 2.0F, 2.0F, 8.0F, new CubeDeformation(0.0F)), PartPose.offset(0.0F, 24.0F, 0.0F));
 
         PartDefinition segment7_bone = segment10.addOrReplaceChild("segment7_bone", CubeListBuilder.create(), PartPose.offsetAndRotation(0.3208F, 0.069F, -39.138F, -1.5708F, 0.0F, 0.0F));
 
         PartDefinition segment11 = partdefinition.addOrReplaceChild("segment11", CubeListBuilder.create()
-                .texOffs(44, 10).addBox(-1F, -1.0F, -4.0F, 2.0F, 2.0F, 8.0F, new CubeDeformation(0.0F)), PartPose.offset(0.0F, 24.0F, 0.0F));
+                .texOffs(44, 10).addBox(-1.0F, -1.0F, -4.0F, 2.0F, 2.0F, 8.0F, new CubeDeformation(0.0F)), PartPose.offset(0.0F, 24.0F, 0.0F));
 
         PartDefinition segment8_bone = segment11.addOrReplaceChild("segment8_bone", CubeListBuilder.create(), PartPose.offsetAndRotation(0.3208F, 0.069F, -39.138F, -1.5708F, 0.0F, 0.0F));
 
         PartDefinition segment12 = partdefinition.addOrReplaceChild("segment12", CubeListBuilder.create()
-                .texOffs(40, 45).addBox(-1F, -1.0F, -4.0F, 2.0F, 2.0F, 8.0F, new CubeDeformation(0.0F)), PartPose.offset(0.0F, 24.0F, 0.0F));
+                .texOffs(40, 45).addBox(-1.0F, -1.0F, -4.0F, 2.0F, 2.0F, 8.0F, new CubeDeformation(0.0F)), PartPose.offset(0.0F, 24.0F, 0.0F));
 
         PartDefinition segment6_bone2 = segment12.addOrReplaceChild("segment6_bone2", CubeListBuilder.create(), PartPose.offsetAndRotation(0.5208F, 0.069F, -31.138F, -1.5708F, 0.0F, 0.0F));
 
         PartDefinition segment13 = partdefinition.addOrReplaceChild("segment13", CubeListBuilder.create()
-                .texOffs(0, 45).addBox(-1F, -1.0F, -4.0F, 2.0F, 2.0F, 8.0F, new CubeDeformation(0.0F)), PartPose.offset(0.0F, 24.0F, 0.0F));
+                .texOffs(0, 45).addBox(-1.0F, -1.0F, -4.0F, 2.0F, 2.0F, 8.0F, new CubeDeformation(0.0F)), PartPose.offset(0.0F, 24.0F, 0.0F));
 
         PartDefinition segment7_bone2 = segment13.addOrReplaceChild("segment7_bone2", CubeListBuilder.create(), PartPose.offsetAndRotation(0.5208F, 0.069F, -39.138F, -1.5708F, 0.0F, 0.0F));
 
         PartDefinition segment14 = partdefinition.addOrReplaceChild("segment14", CubeListBuilder.create()
-                .texOffs(20, 45).addBox(-1F, -1.0F, -4.0F, 2.0F, 2.0F, 8.0F, new CubeDeformation(0.0F)), PartPose.offset(0.0F, 24.0F, 0.0F));
+                .texOffs(20, 45).addBox(-1.0F, -1.0F, -4.0F, 2.0F, 2.0F, 8.0F, new CubeDeformation(0.0F)), PartPose.offset(0.0F, 24.0F, 0.0F));
 
         PartDefinition segment8_bone2 = segment14.addOrReplaceChild("segment8_bone2", CubeListBuilder.create(), PartPose.offsetAndRotation(0.5208F, 0.069F, -39.138F, -1.5708F, 0.0F, 0.0F));
 
         PartDefinition segment15 = partdefinition.addOrReplaceChild("segment15", CubeListBuilder.create()
-                .texOffs(20, 55).addBox(-1F, -1.0F, -4.0F, 2.0F, 2.0F, 8.0F, new CubeDeformation(0.0F)), PartPose.offset(0.0F, 24.0F, 0.0F));
+                .texOffs(20, 55).addBox(-1.0F, -1.0F, -4.0F, 2.0F, 2.0F, 8.0F, new CubeDeformation(0.0F)), PartPose.offset(0.0F, 24.0F, 0.0F));
 
         PartDefinition segment6_bone3 = segment15.addOrReplaceChild("segment6_bone3", CubeListBuilder.create(), PartPose.offsetAndRotation(0.3208F, 0.069F, -31.138F, -1.5708F, 0.0F, 0.0F));
 
         PartDefinition segment9_bone = segment15.addOrReplaceChild("segment9_bone", CubeListBuilder.create(), PartPose.offsetAndRotation(-0.6792F, 0.069F, -31.138F, -1.5708F, 0.0F, 0.0F));
 
         PartDefinition segment16 = partdefinition.addOrReplaceChild("segment16", CubeListBuilder.create()
-                .texOffs(46, 0).addBox(-1F, -1.0F, -4.0F, 2.0F, 2.0F, 8.0F, new CubeDeformation(0.0F)), PartPose.offset(0.0F, 24.0F, 0.0F));
+                .texOffs(46, 0).addBox(-1.0F, -1.0F, -4.0F, 2.0F, 2.0F, 8.0F, new CubeDeformation(0.0F)), PartPose.offset(0.0F, 24.0F, 0.0F));
 
         PartDefinition segment7_bone3 = segment16.addOrReplaceChild("segment7_bone3", CubeListBuilder.create(), PartPose.offsetAndRotation(0.3208F, 0.069F, -39.138F, -1.5708F, 0.0F, 0.0F));
 
         PartDefinition segment10_bone = segment16.addOrReplaceChild("segment10_bone", CubeListBuilder.create(), PartPose.offsetAndRotation(-0.6792F, 0.069F, -39.138F, -1.5708F, 0.0F, 0.0F));
 
         PartDefinition segment17 = partdefinition.addOrReplaceChild("segment17", CubeListBuilder.create()
-                .texOffs(0, 55).addBox(-1F, -1.0F, -4.0F, 2.0F, 2.0F, 8.0F, new CubeDeformation(0.0F)), PartPose.offset(0.0F, 24.0F, 0.0F));
+                .texOffs(0, 55).addBox(-1.0F, -1.0F, -4.0F, 2.0F, 2.0F, 8.0F, new CubeDeformation(0.0F)), PartPose.offset(0.0F, 24.0F, 0.0F));
 
         PartDefinition segment8_bone3 = segment17.addOrReplaceChild("segment8_bone3", CubeListBuilder.create(), PartPose.offsetAndRotation(0.3208F, 0.069F, -39.138F, -1.5708F, 0.0F, 0.0F));
 

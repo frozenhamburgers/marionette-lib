@@ -162,7 +162,7 @@ export function emitEntity(rig, names) {
 		);
 		if (limb.primeDirection) {
 			const [x, y, z] = limb.primeDirection;
-			calls.push(`\t\t\t\t.bodyPrimeDirection(new Vec3(${d(x)}, ${d(y)}, ${d(z)}))`);
+			calls.push(`\t\t\t\t.rootPrimeDirection(new Vec3(${d(x)}, ${d(y)}, ${d(z)}))`);
 		}
 		if (limb.attachment) {
 			const { limb: parent, partIndex, offset } = limb.attachment;
@@ -334,7 +334,7 @@ export function emitSidecar(rig, names) {
 			name: limb.name,
 			field: limb.var,
 			prime_direction: limb.primeDirection,
-			prime_direction_space: limb.primeDirection ? 'body' : null,
+			prime_direction_space: limb.primeDirection ? (limb.attachment ? 'part' : 'body') : null,
 			attachment: limb.attachment && {
 				limb: limb.attachment.limb,
 				part_name: limb.attachment.partName,

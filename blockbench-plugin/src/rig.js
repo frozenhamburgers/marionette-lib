@@ -7,7 +7,7 @@ import {
 	isGroup, isBone, isSegment, isLimb, isMisnestedLimb, limbsInAttachOrder, parentSegmentOf,
 } from './roles.js';
 import {
-	cubeCorners, meshVertexPoints, boundsOfPoints, isUnrotated, worldDirection,
+	cubeCorners, meshVertexPoints, boundsOfPoints, isUnrotated, worldDirection, worldToPart,
 } from './geometry.js';
 import {
 	primeTargetOf, targetPosition, modelTransformOf, attachmentOffsetOf, partTransformOf,
@@ -154,26 +154,40 @@ export function segmentBounds(segment, options) {
 	return boundsOfPoints(points);
 }
 
-// prime object's direction from the chain root, converted out of blockbench model space
-function primeDirectionOf(limbGroup, firstSegment) {
+// prime object's direction from the chain root, in the frame the chain is rooted in, since that is
+// where FabrikAnimator.setRootPrimeDirection reads it back: the parent part's own frame when nested,
+// which is the one the editor carries the prime object around in, and the entity's otherwise
+function primeDirectionOf(limbGroup, firstSegment, parentSegment) {
 	const prime = primeTargetOf(limbGroup);
 	if (!prime) return null;
 
 	const root = modelTransformOf(firstSegment).position;
 	const direction = normalize(subtract(targetPosition(prime), root));
 	if (!direction[0] && !direction[1] && !direction[2]) return null;
-	return worldDirection(direction);
+
+	// no worldDirection on the nested path, the same way attachmentOffsetOf does without one: that flip is
+	// a 180 yaw, which shifts the part frame's own yaw by 180 too, so it cancels out of a part-space
+	// coordinate. flipping the vector alone would leave it a half turn off
+	if (!parentSegment) return worldDirection(direction);
+	return worldToPart(partTransformOf(parentSegment).direction, direction);
+}
+
+// which segment of which other limb this one hangs off, resolved once so the attachment offset and the
+// prime direction cannot disagree about it
+function nestingOf(limbGroup) {
+	if (isMisnestedLimb(limbGroup)) return { misnested: true, parentSegment: null };
+	return { misnested: false, parentSegment: parentSegmentOf(limbGroup) };
 }
 
 // fills in limb.attachment: which part of which other limb this one roots on, and where on it
-function resolveAttachment(limb, limbGroup, locationOf) {
-	if (isMisnestedLimb(limbGroup)) {
+function resolveAttachment(limb, limbGroup, nesting, locationOf) {
+	if (nesting.misnested) {
 		return [`Limb "${limb.name}" sits directly inside another limb with no segment between them, ` +
 			`so there is nothing for it to attach to and it will be rooted on the entity. Move it into ` +
 			`one of that limb's segments.`];
 	}
 
-	const parentSegment = parentSegmentOf(limbGroup);
+	const parentSegment = nesting.parentSegment;
 	if (!parentSegment) return [];
 
 	const location = locationOf.get(parentSegment);
@@ -190,21 +204,31 @@ function resolveAttachment(limb, limbGroup, locationOf) {
 		offset,
 	};
 
-	return unreproducibleOffsetWarnings(limb, parentSegment, offset);
-}
-
-// a part carries a direction and no roll, so which way "sideways" points is undefined once the
-// direction goes vertical, and only the axial component of an offset survives the trip. see
-// MarionettePart.partToWorld
-function unreproducibleOffsetWarnings(limb, parentSegment, offset) {
+	if (!losesPerpendicular(parentSegment, offset)) return [];
 	const perpendicular = Math.hypot(offset[0], offset[1]);
-	if (perpendicular <= 1e-4) return [];
-	if (Math.abs(partTransformOf(parentSegment).direction[1]) <= 0.999) return [];
-
 	return [`Limb "${limb.name}" attaches ${perpendicular.toFixed(3)} blocks off the axis of segment ` +
 		`"${parentSegment.name}", which points very nearly straight up or down. A part has no roll, so ` +
 		`there is no defined sideways direction on it and the limb will not root where the editor shows ` +
 		`it. Move the attachment onto that segment's axis, or angle the segment away from vertical.`];
+}
+
+// a nested limb's prime direction rides the same frame the offset does, so it is lost the same way
+function primeDirectionWarnings(limb, nesting) {
+	if (!nesting.parentSegment || !limb.primeDirection) return [];
+	if (!losesPerpendicular(nesting.parentSegment, limb.primeDirection)) return [];
+
+	return [`Limb "${limb.name}" is primed across the axis of segment "${nesting.parentSegment.name}", ` +
+		`which points very nearly straight up or down. A part has no roll, so there is no defined ` +
+		`sideways direction on it and the bias will swing around as that segment wobbles. Prime it ` +
+		`along the segment's axis, or angle the segment away from vertical.`];
+}
+
+// a part carries a direction and no roll, so which way "sideways" points is undefined once the
+// direction goes vertical, and only the axial component of a part-space vector survives the trip. see
+// MarionettePart.partToWorld
+function losesPerpendicular(parentSegment, vector) {
+	if (Math.hypot(vector[0], vector[1]) <= 1e-4) return false;
+	return Math.abs(partTransformOf(parentSegment).direction[1]) > 0.999;
 }
 
 /** @returns {{limbs: Array, segments: Array, textureWidth: number, textureHeight: number, shadowRadius: number, warnings: string[]}} */
@@ -224,6 +248,7 @@ export function collectRig(options = {}) {
 	// group is kept out of the limb description itself so it stays plain data for the java emitters
 	const groupOf = new Map();
 	const locationOf = new Map();
+	const nestingFor = new Map();
 
 	// parents before children, so a limb's attachment can name a part of a chain already collected and
 	// the generated constructor assigns the parent's field before the child reads it
@@ -235,14 +260,16 @@ export function collectRig(options = {}) {
 			continue;
 		}
 
+		const nesting = nestingOf(limbGroup);
 		const limb = {
 			name: limbGroup.name,
 			var: unique(javaIdentifier(limbGroup.name, 'limb')),
-			primeDirection: primeDirectionOf(limbGroup, chain[0]),
+			primeDirection: primeDirectionOf(limbGroup, chain[0], nesting.parentSegment),
 			attachment: null,
 			segments: [],
 		};
 		groupOf.set(limb, limbGroup);
+		nestingFor.set(limb, nesting);
 
 		for (const group of chain) {
 			const bone = boneOf(group);
@@ -287,7 +314,9 @@ export function collectRig(options = {}) {
 	}
 
 	for (const limb of limbs) {
-		warnings.push(...resolveAttachment(limb, groupOf.get(limb), locationOf));
+		const nesting = nestingFor.get(limb);
+		warnings.push(...resolveAttachment(limb, groupOf.get(limb), nesting, locationOf));
+		warnings.push(...primeDirectionWarnings(limb, nesting));
 	}
 
 	if (!limbs.length) warnings.push('No limbs with segments were found; nothing to export.');
