@@ -43,7 +43,9 @@ function cubeData(cube, integerSize) {
 		to: cube.to.slice(),
 		size,
 		inflate: cube.inflate || 0,
-		uv: (cube.uv_offset || [0, 0]).slice(),
+		// texOffs takes ints, and the codec rounds the same way (I() in the modded entity templates)
+		uv: (cube.uv_offset || [0, 0]).map(Math.round),
+		mirror: !!cube.mirror_uv,
 		rotation: (cube.rotation || [0, 0, 0]).slice(),
 		origin: (cube.origin || [0, 0, 0]).slice(),
 	};

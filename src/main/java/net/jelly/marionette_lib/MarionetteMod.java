@@ -5,6 +5,7 @@ import net.jelly.marionette_lib.entity.ModEntities;
 import net.jelly.marionette_lib.entity.examples.octopus.OctopusRenderer;
 import net.jelly.marionette_lib.entity.examples.tentacle.TentacleRenderer;
 import net.jelly.marionette_lib.entity.examples.worm.WormRenderer;
+import net.jelly.marionette_lib.entity.examples.testwyvern.TestWyvernRenderer;
 import net.jelly.marionette_lib.entity.examples.wyvern.WyvernRenderer;
 import net.jelly.marionette_lib.item.ModItems;
 import net.jelly.marionette_lib.networking.ModMessages;
@@ -84,6 +85,7 @@ public class MarionetteMod
             EntityRenderers.register(ModEntities.OCTOPUS.get(), OctopusRenderer::new);
             EntityRenderers.register(ModEntities.WYVERN.get(), WyvernRenderer::new);
             EntityRenderers.register(ModEntities.TENTACLE.get(), TentacleRenderer::new);
+            EntityRenderers.register(ModEntities.TEST_WYVERN.get(), TestWyvernRenderer::new);
 
         }
     }

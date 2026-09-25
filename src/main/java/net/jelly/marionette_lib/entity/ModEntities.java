@@ -3,6 +3,7 @@ package net.jelly.marionette_lib.entity;
 import net.jelly.marionette_lib.MarionetteMod;
 import net.jelly.marionette_lib.entity.examples.octopus.OctopusEntity;
 import net.jelly.marionette_lib.entity.examples.tentacle.TentacleEntity;
+import net.jelly.marionette_lib.entity.examples.testwyvern.TestWyvernEntity;
 import net.jelly.marionette_lib.entity.examples.worm.WormEntity;
 import net.jelly.marionette_lib.entity.examples.wyvern.WyvernEntity;
 import net.minecraft.world.entity.EntityType;
@@ -38,6 +39,12 @@ public class ModEntities {
             EntityType.Builder.of(TentacleEntity::new, MobCategory.MISC)
                     .sized(1.0f,1.0f)
                     .build("tentacle")
+    );
+
+    public static final RegistryObject<EntityType<TestWyvernEntity>> TEST_WYVERN = ENTITY_TYPES.register("test_wyvern", () ->
+            EntityType.Builder.of(TestWyvernEntity::new, MobCategory.MISC)
+                    .sized(1.0f,1.0f)
+                    .build("test_wyvern")
     );
 
     public static void register(IEventBus eventBus) {

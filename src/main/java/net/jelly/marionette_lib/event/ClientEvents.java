@@ -8,6 +8,8 @@ import net.jelly.marionette_lib.entity.examples.tentacle.TentacleModel;
 import net.jelly.marionette_lib.entity.examples.tentacle.TentacleRenderer;
 import net.jelly.marionette_lib.entity.examples.worm.WormModel;
 import net.jelly.marionette_lib.entity.examples.worm.WormRenderer;
+import net.jelly.marionette_lib.entity.examples.testwyvern.TestWyvernModel;
+import net.jelly.marionette_lib.entity.examples.testwyvern.TestWyvernRenderer;
 import net.jelly.marionette_lib.entity.examples.wyvern.WyvernModel;
 import net.jelly.marionette_lib.entity.examples.wyvern.WyvernRenderer;
 import net.minecraftforge.api.distmarker.Dist;
@@ -48,6 +50,7 @@ public class ClientEvents {
             event.registerLayerDefinition(OctopusRenderer.OCTOPUS_LAYER, OctopusModel::createBodyLayer);
             event.registerLayerDefinition(WyvernRenderer.WYVERN_LAYER, WyvernModel::createBodyLayer);
             event.registerLayerDefinition(TentacleRenderer.TENTACLE_LAYER, TentacleModel::createBodyLayer);
+            event.registerLayerDefinition(TestWyvernRenderer.TEST_WYVERN_LAYER, TestWyvernModel::createBodyLayer);
 
         }
 

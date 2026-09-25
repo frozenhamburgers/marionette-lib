@@ -40,14 +40,30 @@ export function buildNames(form, generator) {
 	};
 }
 
+// export texture file too
+export function textureFile(names) {
+	if (typeof Texture === 'undefined') return null;
+
+	const texture = (Texture.getDefault && Texture.getDefault()) || (Texture.all || [])[0];
+	if (!texture || typeof texture.getDataURL !== 'function') return null;
+
+	return { name: `${names.textureName}.png`, content: texture.getDataURL(), savetype: 'image' };
+}
+
 export function buildFiles(rig, names) {
-	return [
+	const files = [
 		{ name: `${names.className}Model.java`, content: emitModel(rig, names) },
 		{ name: `${names.className}Entity.java`, content: emitEntity(rig, names) },
 		{ name: `${names.className}Renderer.java`, content: emitRenderer(rig, names) },
 		{ name: `${snakeCase(names.className)}.marionette.json`, content: emitSidecar(rig, names) },
 	];
+
+	const texture = textureFile(names);
+	if (texture) files.push(texture);
+	return files;
 }
+
+const TYPE_NAMES = { java: 'Java Source', json: 'JSON', png: 'PNG' };
 
 function reportWarnings(warnings) {
 	if (!warnings.length) return;
@@ -72,7 +88,7 @@ function writeFiles(files, names) {
 		for (const file of files) {
 			Blockbench.writeFile(`${directory}${PathModule.sep}${file.name}`, {
 				content: file.content,
-				savetype: 'text',
+				savetype: file.savetype || 'text',
 			});
 		}
 
@@ -82,11 +98,11 @@ function writeFiles(files, names) {
 
 	for (const file of files) {
 		Blockbench.export({
-			type: file.name.endsWith('.json') ? 'JSON' : 'Java Source',
+			type: TYPE_NAMES[file.name.split('.').pop()] || 'Java Source',
 			extensions: [file.name.split('.').pop()],
 			name: file.name,
 			content: file.content,
-			savetype: 'text',
+			savetype: file.savetype || 'text',
 			resource_id: 'marionette_java_export',
 		});
 	}
@@ -139,7 +155,7 @@ export function buildExportAction() {
 					},
 					overwrite_warning: {
 						type: 'info',
-						text: 'All four files are overwritten without asking. Keep hand edits elsewhere.',
+						text: 'Every file is overwritten without asking, the texture included. Keep hand edits elsewhere.',
 					},
 				},
 				onConfirm(form) {

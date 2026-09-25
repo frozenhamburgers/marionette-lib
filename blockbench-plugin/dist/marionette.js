@@ -1478,7 +1478,9 @@
       to: cube.to.slice(),
       size,
       inflate: cube.inflate || 0,
-      uv: (cube.uv_offset || [0, 0]).slice(),
+      // texOffs takes ints, and the codec rounds the same way (I() in the modded entity templates)
+      uv: (cube.uv_offset || [0, 0]).map(Math.round),
+      mirror: !!cube.mirror_uv,
       rotation: (cube.rotation || [0, 0, 0]).slice(),
       origin: (cube.origin || [0, 0, 0]).slice()
     };
@@ -1710,7 +1712,7 @@
     const pad = "	".repeat(indent);
     const lines = cubes.map((cube) => {
       const [x, y, z] = cubeOffset(cube, origin);
-      return `${pad}.texOffs(${cube.uv[0]}, ${cube.uv[1]}).addBox(${f(x)}, ${f(y)}, ${f(z)}, ${f(cube.size[0])}, ${f(cube.size[1])}, ${f(cube.size[2])}, new CubeDeformation(${f(cube.inflate || 0)}))`;
+      return `${pad}.texOffs(${cube.uv[0]}, ${cube.uv[1]})` + (cube.mirror ? ".mirror()" : "") + `.addBox(${f(x)}, ${f(y)}, ${f(z)}, ${f(cube.size[0])}, ${f(cube.size[1])}, ${f(cube.size[2])}, new CubeDeformation(${f(cube.inflate || 0)}))` + (cube.mirror ? ".mirror(false)" : "");
     });
     return `CubeListBuilder.create()
 ${lines.join("\n")}`;
@@ -1998,14 +2000,24 @@ public class ${names.className}Renderer extends MobRenderer<${names.className}En
       generator
     };
   }
+  function textureFile(names) {
+    if (typeof Texture === "undefined") return null;
+    const texture = Texture.getDefault && Texture.getDefault() || (Texture.all || [])[0];
+    if (!texture || typeof texture.getDataURL !== "function") return null;
+    return { name: `${names.textureName}.png`, content: texture.getDataURL(), savetype: "image" };
+  }
   function buildFiles(rig, names) {
-    return [
+    const files = [
       { name: `${names.className}Model.java`, content: emitModel(rig, names) },
       { name: `${names.className}Entity.java`, content: emitEntity(rig, names) },
       { name: `${names.className}Renderer.java`, content: emitRenderer(rig, names) },
       { name: `${snakeCase(names.className)}.marionette.json`, content: emitSidecar(rig, names) }
     ];
+    const texture = textureFile(names);
+    if (texture) files.push(texture);
+    return files;
   }
+  var TYPE_NAMES = { java: "Java Source", json: "JSON", png: "PNG" };
   function reportWarnings(warnings) {
     if (!warnings.length) return;
     Blockbench.showMessageBox({
@@ -2025,7 +2037,7 @@ public class ${names.className}Renderer extends MobRenderer<${names.className}En
       for (const file of files) {
         Blockbench.writeFile(`${directory}${PathModule.sep}${file.name}`, {
           content: file.content,
-          savetype: "text"
+          savetype: file.savetype || "text"
         });
       }
       Blockbench.showQuickMessage(`Exported ${files.length} files to ${directory}`, 3e3);
@@ -2033,11 +2045,11 @@ public class ${names.className}Renderer extends MobRenderer<${names.className}En
     }
     for (const file of files) {
       Blockbench.export({
-        type: file.name.endsWith(".json") ? "JSON" : "Java Source",
+        type: TYPE_NAMES[file.name.split(".").pop()] || "Java Source",
         extensions: [file.name.split(".").pop()],
         name: file.name,
         content: file.content,
-        savetype: "text",
+        savetype: file.savetype || "text",
         resource_id: "marionette_java_export"
       });
     }
@@ -2087,7 +2099,7 @@ public class ${names.className}Renderer extends MobRenderer<${names.className}En
             },
             overwrite_warning: {
               type: "info",
-              text: "All four files are overwritten without asking. Keep hand edits elsewhere."
+              text: "Every file is overwritten without asking, the texture included. Keep hand edits elsewhere."
             }
           },
           onConfirm(form) {

@@ -55,10 +55,14 @@ function cubeListBuilder(cubes, origin, indent) {
 	const pad = '\t'.repeat(indent);
 	const lines = cubes.map(cube => {
 		const [x, y, z] = cubeOffset(cube, origin);
+		// mirror() brackets the box the way the codec's cube template does
+		// mirrored cube looks right in the viewport either way, previously this was dropped and only caused issues in game
 		return `${pad}.texOffs(${cube.uv[0]}, ${cube.uv[1]})` +
+			(cube.mirror ? '.mirror()' : '') +
 			`.addBox(${f(x)}, ${f(y)}, ${f(z)}, ` +
 			`${f(cube.size[0])}, ${f(cube.size[1])}, ${f(cube.size[2])}, ` +
-			`new CubeDeformation(${f(cube.inflate || 0)}))`;
+			`new CubeDeformation(${f(cube.inflate || 0)}))` +
+			(cube.mirror ? '.mirror(false)' : '');
 	});
 
 	return `CubeListBuilder.create()\n${lines.join('\n')}`;
