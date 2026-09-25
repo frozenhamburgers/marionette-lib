@@ -12,28 +12,31 @@ import {
 } from './roles.js';
 import {
 	quaternionFromRotation, quaternionMultiply, quaternionConjugate,
-	applyQuaternion, quaternionFromUnitVectors, partToWorld, worldToPart,
+	applyQuaternion, partQuaternion, partToWorld, worldToPart,
 } from './geometry.js';
 import { createChain, solve, jointsOf, add, subtract, scale, normalize } from './fabrik.js';
 
-const IDENTITY = { position: [0, 0, 0], quaternion: [0, 0, 0, 1] };
+const NO_POSE = new Map();
 
 export function isTarget(node) {
 	return typeof NullObject !== 'undefined' && node instanceof NullObject;
 }
 
 // mirrors what blockbench's preview controller does for use_absolute_position groups: each group's scene position is origin-parent.origin, rotated by everything above it
-export function modelTransformOf(node) {
+// posed maps a group to the world transform simulation has already written onto its scene object, and composition starts at the nearest such ancestor:
+// everything below one rides along with it, so reading the rest pose there transforms a nested limb twice over
+export function modelTransformOf(node, posed = NO_POSE) {
 	const ancestors = [];
 	let current = node;
-	while (isGroup(current)) {
+	while (isGroup(current) && !posed.has(current)) {
 		ancestors.unshift(current);
 		current = current.parent;
 	}
 
-	let position = [0, 0, 0];
-	let quaternion = [0, 0, 0, 1];
-	let parentOrigin = [0, 0, 0];
+	const base = posed.get(current) || null;
+	let position = base ? base.position : [0, 0, 0];
+	let quaternion = base ? base.quaternion : [0, 0, 0, 1];
+	let parentOrigin = base ? current.origin : [0, 0, 0];
 
 	for (const group of ancestors) {
 		const local = subtract(group.origin, parentOrigin);
@@ -67,25 +70,37 @@ export function primeTargetOf(limb) {
 	return findTarget(limb, TARGET_PRIME);
 }
 
-// NullObject.behavior sets no use_absolute_position, so its position is relative to its parent group's origin, unlike Group/Cube origins which are absolute.
-// getting this backwards puts the target somewhere plausible but wrong, looks exactly like a solver bug
-export function targetPosition(target) {
-	const parent = modelTransformOf(target.parent);
-	return add(parent.position, applyQuaternion(parent.quaternion, target.position));
+// NodePreviewController.updateTransform (outliner.js:294) writes a node's mesh position as its own origin
+// then subtracts the parent's, since Group.behavior sets use_absolute_position, and NullObject's origin
+// getter returns its position, so the local offset is position - parent.origin, which is also how
+// NullObject.getWorldCenter reads it back. dropping that term is invisible while a limb group sits at
+// 0,0,0 and is off by exactly the limb's own origin once it does not, which is every nested limb
+export function targetPosition(target, posed = NO_POSE) {
+	const group = target.parent;
+	const parent = modelTransformOf(group, posed);
+	const local = isGroup(group) ? subtract(target.position, group.origin) : target.position;
+	return add(parent.position, applyQuaternion(parent.quaternion, local));
+}
+
+/** inverse of {@link targetPosition}: where to store a null object so it sits at `world` */
+export function targetLocalPosition(group, world) {
+	const parent = modelTransformOf(group);
+	const local = applyQuaternion(quaternionConjugate(parent.quaternion), subtract(world, parent.position));
+	return isGroup(group) ? add(local, group.origin) : local;
 }
 
 // direction from the chain root toward the prime object, matching FabrikAnimator.setPrimeDirection
-function primeDirectionOf(description, root) {
+function primeDirectionOf(description, root, posed) {
 	if (!description.primeTarget) return null;
-	const position = scale(targetPosition(description.primeTarget), 1 / UNITS_PER_BLOCK);
+	const position = scale(targetPosition(description.primeTarget, posed), 1 / UNITS_PER_BLOCK);
 	const direction = normalize(subtract(position, root));
 	return direction[0] || direction[1] || direction[2] ? direction : null;
 }
 
 // a segment's MarionettePart at rest: the centre of its bone, which is what the part's position() is,
 // and the direction the bone runs
-export function partTransformOf(segment) {
-	const transform = modelTransformOf(segment);
+export function partTransformOf(segment, posed = NO_POSE) {
+	const transform = modelTransformOf(segment, posed);
 	const direction = applyQuaternion(transform.quaternion, [0, 0, 1]);
 	return {
 		position: add(transform.position, scale(direction, lengthOf(segment) / 2)),
@@ -132,32 +147,33 @@ function stillMatches(entry, description) {
 }
 
 // an attached limb roots on its parent part wherever that part is *now*, so the parent's solved pose is
-// preferred and the rest pose is only the fallback for a parent limb that has no target and so never solves
-function rootOf(description, posed) {
+// preferred and the rest pose is only the fallback for a parent limb that has no target and so never solves.
+// that fallback still reads through posed, since an unsimulated limb hanging off a simulated one moves with it
+function rootOf(description, parts, posed) {
 	if (description.parentSegment) {
-		const parent = posed.get(description.parentSegment)
-			|| scaleTransform(partTransformOf(description.parentSegment), 1 / UNITS_PER_BLOCK);
+		const parent = parts.get(description.parentSegment)
+			|| scaleTransform(partTransformOf(description.parentSegment, posed), 1 / UNITS_PER_BLOCK);
 		const offset = scale(
 			attachmentOffsetOf(description.limb, description.parentSegment),
 			1 / UNITS_PER_BLOCK,
 		);
 		return add(parent.position, partToWorld(parent.direction, offset));
 	}
-	return scale(modelTransformOf(description.segments[0]).position, 1 / UNITS_PER_BLOCK);
+	return scale(modelTransformOf(description.segments[0], posed).position, 1 / UNITS_PER_BLOCK);
 }
 
 function scaleTransform(transform, factor) {
 	return { position: scale(transform.position, factor), direction: transform.direction };
 }
 
-function buildChain(description, posed) {
+function buildChain(description, parts, posed) {
 	const directions = description.segments.map(segment =>
-		applyQuaternion(modelTransformOf(segment).quaternion, [0, 0, 1])
+		applyQuaternion(modelTransformOf(segment, posed).quaternion, [0, 0, 1])
 	);
 
 	return createChain(
 		description.lengths.map(length => length / UNITS_PER_BLOCK),
-		rootOf(description, posed),
+		rootOf(description, parts, posed),
 		directions,
 	);
 }
@@ -219,6 +235,10 @@ export class Simulation {
 		// solved pose of every segment simulated this frame, so a limb attached to one roots on where it
 		// actually ended up rather than where it was authored. attach order guarantees the parent is in
 		// here before any child reads it
+		const parts = new Map();
+
+		// the same frame in scene terms, every group whose transform has already been written this frame,
+		// keyed for modelTransformOf so anything below one is read where it now is rather than where it was authored
 		const posed = new Map();
 
 		for (const limb of limbsInAttachOrder()) {
@@ -235,18 +255,18 @@ export class Simulation {
 					target: description.target,
 					primeTarget: description.primeTarget,
 					parentSegment: description.parentSegment,
-					chain: buildChain(description, posed),
+					chain: buildChain(description, parts, posed),
 				};
 				this.entries.set(limb, entry);
 			}
 
-			const target = scale(targetPosition(description.target), 1 / UNITS_PER_BLOCK);
-			entry.chain.root = rootOf(description, posed);
-			entry.chain.primeDirection = primeDirectionOf(description, entry.chain.root);
+			const target = scale(targetPosition(description.target, posed), 1 / UNITS_PER_BLOCK);
+			entry.chain.root = rootOf(description, parts, posed);
+			entry.chain.primeDirection = primeDirectionOf(description, entry.chain.root, posed);
 			solve(entry.chain, target);
-			this.apply(entry);
+			this.apply(entry, posed);
 
-			entry.segments.forEach((segment, i) => posed.set(segment, {
+			entry.segments.forEach((segment, i) => parts.set(segment, {
 				position: entry.chain.parts[i].position,
 				direction: entry.chain.parts[i].direction,
 			}));
@@ -262,10 +282,11 @@ export class Simulation {
 	}
 
 	// each group's transform has to be expressed in its parent's frame for a nested chain that parent is the segment posed one step earlier,
-	// so posed transforms are tracked as we go rather than read back off the scene
-	apply(entry) {
+	// so posed transforms are tracked as we go rather than read back off the scene.
+	// posed spans the whole frame, not just this limb: the parent of a nested limb's first segment is the limb group,
+	// which is not posed itself but hangs off a segment that is, and composing from rest there is what displaced the whole nested chain
+	apply(entry, posed) {
 		const joints = jointsOf(entry.chain).map(joint => scale(joint, UNITS_PER_BLOCK));
-		const posed = new Map();
 
 		for (let i = 0; i < entry.segments.length; i++) {
 			const group = entry.segments[i];
@@ -274,11 +295,14 @@ export class Simulation {
 
 			const world = {
 				position: joints[i],
-				quaternion: quaternionFromUnitVectors([0, 0, 1], entry.chain.parts[i].direction),
+				// the part frame, not the shortest rotation onto the direction. the two differ by a roll, and
+				// everything parented under a posed segment -- a nested limb, its targets -- rides on this one,
+				// while rootOf resolves the attachment in part space. reaching for a target a roll away from
+				// where it is drawn is what that mismatch looks like. this is also the frame the renderer uses
+				quaternion: partQuaternion(entry.chain.parts[i].direction),
 			};
 
-			const parent = posed.get(group.parent)
-				|| (isGroup(group.parent) ? modelTransformOf(group.parent) : IDENTITY);
+			const parent = modelTransformOf(group.parent, posed);
 
 			const inverse = quaternionConjugate(parent.quaternion);
 			const localPosition = applyQuaternion(inverse, subtract(world.position, parent.position));

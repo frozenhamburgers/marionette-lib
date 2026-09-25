@@ -301,3 +301,20 @@ export function worldToPart(direction, world) {
 	const { yaw, pitch } = partFrameAngles(direction);
 	return xRot(yRot(world, -yaw), -pitch);
 }
+
+/**
+ * the part frame itself as a rotation, R = Ry(yaw)*Rx(-pitch), so R applied to +Z is `direction`.
+ * distinct from quaternionFromUnitVectors, which takes the shortest path and so carries a roll:
+ * both land +Z on the direction, only this one agrees with where part space puts everything else
+ */
+export function partQuaternion(direction) {
+	const { yaw, pitch } = partFrameAngles(direction);
+	const cy = Math.cos(yaw), sy = Math.sin(yaw);
+	const cp = Math.cos(pitch), sp = Math.sin(pitch);
+
+	return quaternionFromMatrix([
+		[cy, -sy * sp, sy * cp],
+		[0, cp, sp],
+		[-sy, -cy * sp, cy * cp],
+	]);
+}

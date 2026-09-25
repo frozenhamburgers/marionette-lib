@@ -300,27 +300,6 @@
       v[2] + w * tz + x * ty - y * tx
     ];
   }
-  function quaternionFromUnitVectors(from, to) {
-    const dot = from[0] * to[0] + from[1] * to[1] + from[2] * to[2];
-    let w = 1 + dot;
-    if (w < 1e-6) {
-      if (Math.abs(from[0]) > Math.abs(from[2])) {
-        return normalizeQuaternion([-from[1], from[0], 0, 0]);
-      }
-      return normalizeQuaternion([0, -from[2], from[1], 0]);
-    }
-    return normalizeQuaternion([
-      from[1] * to[2] - from[2] * to[1],
-      from[2] * to[0] - from[0] * to[2],
-      from[0] * to[1] - from[1] * to[0],
-      w
-    ]);
-  }
-  function normalizeQuaternion(q) {
-    const d2 = Math.hypot(q[0], q[1], q[2], q[3]);
-    if (!d2) return [0, 0, 0, 1];
-    return [q[0] / d2, q[1] / d2, q[2] / d2, q[3] / d2];
-  }
   function worldDirection(direction) {
     return [-direction[0] + 0, direction[1] + 0, -direction[2] + 0];
   }
@@ -351,6 +330,16 @@
   function worldToPart(direction, world) {
     const { yaw, pitch } = partFrameAngles(direction);
     return xRot(yRot(world, -yaw), -pitch);
+  }
+  function partQuaternion(direction) {
+    const { yaw, pitch } = partFrameAngles(direction);
+    const cy = Math.cos(yaw), sy = Math.sin(yaw);
+    const cp = Math.cos(pitch), sp = Math.sin(pitch);
+    return quaternionFromMatrix([
+      [cy, -sy * sp, sy * cp],
+      [0, cp, sp],
+      [-sy, -cy * sp, cy * cp]
+    ]);
   }
 
   // src/roles.js
@@ -1190,20 +1179,21 @@
   }
 
   // src/simulate.js
-  var IDENTITY = { position: [0, 0, 0], quaternion: [0, 0, 0, 1] };
+  var NO_POSE = /* @__PURE__ */ new Map();
   function isTarget(node) {
     return typeof NullObject !== "undefined" && node instanceof NullObject;
   }
-  function modelTransformOf(node) {
+  function modelTransformOf(node, posed = NO_POSE) {
     const ancestors = [];
     let current = node;
-    while (isGroup(current)) {
+    while (isGroup(current) && !posed.has(current)) {
       ancestors.unshift(current);
       current = current.parent;
     }
-    let position = [0, 0, 0];
-    let quaternion = [0, 0, 0, 1];
-    let parentOrigin = [0, 0, 0];
+    const base = posed.get(current) || null;
+    let position = base ? base.position : [0, 0, 0];
+    let quaternion = base ? base.quaternion : [0, 0, 0, 1];
+    let parentOrigin = base ? current.origin : [0, 0, 0];
     for (const group of ancestors) {
       const local = subtract(group.origin, parentOrigin);
       position = add(position, applyQuaternion(quaternion, local));
@@ -1234,18 +1224,25 @@
   function primeTargetOf(limb) {
     return findTarget(limb, TARGET_PRIME);
   }
-  function targetPosition(target) {
-    const parent = modelTransformOf(target.parent);
-    return add(parent.position, applyQuaternion(parent.quaternion, target.position));
+  function targetPosition(target, posed = NO_POSE) {
+    const group = target.parent;
+    const parent = modelTransformOf(group, posed);
+    const local = isGroup(group) ? subtract(target.position, group.origin) : target.position;
+    return add(parent.position, applyQuaternion(parent.quaternion, local));
   }
-  function primeDirectionOf(description, root) {
+  function targetLocalPosition(group, world) {
+    const parent = modelTransformOf(group);
+    const local = applyQuaternion(quaternionConjugate(parent.quaternion), subtract(world, parent.position));
+    return isGroup(group) ? add(local, group.origin) : local;
+  }
+  function primeDirectionOf(description, root, posed) {
     if (!description.primeTarget) return null;
-    const position = scale(targetPosition(description.primeTarget), 1 / UNITS_PER_BLOCK);
+    const position = scale(targetPosition(description.primeTarget, posed), 1 / UNITS_PER_BLOCK);
     const direction = normalize(subtract(position, root));
     return direction[0] || direction[1] || direction[2] ? direction : null;
   }
-  function partTransformOf(segment) {
-    const transform = modelTransformOf(segment);
+  function partTransformOf(segment, posed = NO_POSE) {
+    const transform = modelTransformOf(segment, posed);
     const direction = applyQuaternion(transform.quaternion, [0, 0, 1]);
     return {
       position: add(transform.position, scale(direction, lengthOf(segment) / 2)),
@@ -1282,27 +1279,27 @@
       (segment, i) => segment === description.segments[i] && entry.chain.parts[i].length === description.lengths[i] / UNITS_PER_BLOCK
     );
   }
-  function rootOf(description, posed) {
+  function rootOf(description, parts, posed) {
     if (description.parentSegment) {
-      const parent = posed.get(description.parentSegment) || scaleTransform(partTransformOf(description.parentSegment), 1 / UNITS_PER_BLOCK);
+      const parent = parts.get(description.parentSegment) || scaleTransform(partTransformOf(description.parentSegment, posed), 1 / UNITS_PER_BLOCK);
       const offset = scale(
         attachmentOffsetOf(description.limb, description.parentSegment),
         1 / UNITS_PER_BLOCK
       );
       return add(parent.position, partToWorld(parent.direction, offset));
     }
-    return scale(modelTransformOf(description.segments[0]).position, 1 / UNITS_PER_BLOCK);
+    return scale(modelTransformOf(description.segments[0], posed).position, 1 / UNITS_PER_BLOCK);
   }
   function scaleTransform(transform, factor) {
     return { position: scale(transform.position, factor), direction: transform.direction };
   }
-  function buildChain(description, posed) {
+  function buildChain(description, parts, posed) {
     const directions = description.segments.map(
-      (segment) => applyQuaternion(modelTransformOf(segment).quaternion, [0, 0, 1])
+      (segment) => applyQuaternion(modelTransformOf(segment, posed).quaternion, [0, 0, 1])
     );
     return createChain(
       description.lengths.map((length) => length / UNITS_PER_BLOCK),
-      rootOf(description, posed),
+      rootOf(description, parts, posed),
       directions
     );
   }
@@ -1352,6 +1349,7 @@
     step() {
       if (!isMarionetteFormat()) return;
       const live = /* @__PURE__ */ new Set();
+      const parts = /* @__PURE__ */ new Map();
       const posed = /* @__PURE__ */ new Map();
       for (const limb of limbsInAttachOrder()) {
         const description = describeLimb(limb);
@@ -1364,16 +1362,16 @@
             target: description.target,
             primeTarget: description.primeTarget,
             parentSegment: description.parentSegment,
-            chain: buildChain(description, posed)
+            chain: buildChain(description, parts, posed)
           };
           this.entries.set(limb, entry);
         }
-        const target = scale(targetPosition(description.target), 1 / UNITS_PER_BLOCK);
-        entry.chain.root = rootOf(description, posed);
-        entry.chain.primeDirection = primeDirectionOf(description, entry.chain.root);
+        const target = scale(targetPosition(description.target, posed), 1 / UNITS_PER_BLOCK);
+        entry.chain.root = rootOf(description, parts, posed);
+        entry.chain.primeDirection = primeDirectionOf(description, entry.chain.root, posed);
         solve(entry.chain, target);
-        this.apply(entry);
-        entry.segments.forEach((segment, i) => posed.set(segment, {
+        this.apply(entry, posed);
+        entry.segments.forEach((segment, i) => parts.set(segment, {
           position: entry.chain.parts[i].position,
           direction: entry.chain.parts[i].direction
         }));
@@ -1386,19 +1384,24 @@
       }
     }
     // each group's transform has to be expressed in its parent's frame for a nested chain that parent is the segment posed one step earlier,
-    // so posed transforms are tracked as we go rather than read back off the scene
-    apply(entry) {
+    // so posed transforms are tracked as we go rather than read back off the scene.
+    // posed spans the whole frame, not just this limb: the parent of a nested limb's first segment is the limb group,
+    // which is not posed itself but hangs off a segment that is, and composing from rest there is what displaced the whole nested chain
+    apply(entry, posed) {
       const joints = jointsOf(entry.chain).map((joint) => scale(joint, UNITS_PER_BLOCK));
-      const posed = /* @__PURE__ */ new Map();
       for (let i = 0; i < entry.segments.length; i++) {
         const group = entry.segments[i];
         const sceneObject = group.mesh;
         if (!sceneObject) continue;
         const world = {
           position: joints[i],
-          quaternion: quaternionFromUnitVectors([0, 0, 1], entry.chain.parts[i].direction)
+          // the part frame, not the shortest rotation onto the direction. the two differ by a roll, and
+          // everything parented under a posed segment -- a nested limb, its targets -- rides on this one,
+          // while rootOf resolves the attachment in part space. reaching for a target a roll away from
+          // where it is drawn is what that mismatch looks like. this is also the frame the renderer uses
+          quaternion: partQuaternion(entry.chain.parts[i].direction)
         };
-        const parent = posed.get(group.parent) || (isGroup(group.parent) ? modelTransformOf(group.parent) : IDENTITY);
+        const parent = modelTransformOf(group.parent, posed);
         const inverse = quaternionConjugate(parent.quaternion);
         const localPosition = applyQuaternion(inverse, subtract(world.position, parent.position));
         const localQuaternion = quaternionMultiply(inverse, world.quaternion);
@@ -2120,24 +2123,33 @@ ${err && err.message}`
 
   // src/simulate_actions.js
   var AVAILABLE2 = () => isMarionetteFormat() && Modes.edit;
-  function defaultTargetPosition(limb) {
+  function restTip(limb) {
     const segments = chainOf(limb);
-    if (!segments.length) return [0, 0, 0];
+    if (!segments.length) return null;
     const last = segments[segments.length - 1];
     const transform = modelTransformOf(last);
     const direction = applyQuaternion(transform.quaternion, [0, 0, 1]);
     const length = lengthOf(last);
-    const tip = [
+    return [
       transform.position[0] + direction[0] * length,
       transform.position[1] + direction[1] * length,
       transform.position[2] + direction[2] * length
     ];
-    const limbOrigin = isGroup(limb) ? limb.origin : [0, 0, 0];
-    return [tip[0] - limbOrigin[0], tip[1] - limbOrigin[1], tip[2] - limbOrigin[2]];
+  }
+  function defaultTargetPosition(limb) {
+    const tip = restTip(limb);
+    return tip ? targetLocalPosition(limb, tip) : [0, 0, 0];
   }
   function defaultPrimePosition(limb) {
-    const tip = defaultTargetPosition(limb);
-    return [tip[0] * 0.5, tip[1] * 0.5 + 8, tip[2] * 0.5];
+    const segments = chainOf(limb);
+    const tip = restTip(limb);
+    if (!tip) return [0, 0, 0];
+    const root = modelTransformOf(segments[0]).position;
+    return targetLocalPosition(limb, [
+      (root[0] + tip[0]) / 2,
+      (root[1] + tip[1]) / 2 + 8,
+      (root[2] + tip[2]) / 2
+    ]);
   }
   function addTargetTo(limb, { name, position, type, existing }) {
     if (existing) {

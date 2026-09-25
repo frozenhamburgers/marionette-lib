@@ -1,37 +1,48 @@
 // kept apart from simulate.js so solver can be tested indepedently
 
-import { Simulation, targetOf, primeTargetOf, modelTransformOf } from './simulate.js';
-import { isMarionetteFormat, selectedLimb, chainOf, lengthOf, isGroup } from './roles.js';
+import { Simulation, targetOf, primeTargetOf, modelTransformOf, targetLocalPosition } from './simulate.js';
+import { isMarionetteFormat, selectedLimb, chainOf, lengthOf } from './roles.js';
 import { applyQuaternion } from './geometry.js';
 import { TARGET_PRIME } from './constants.js';
 
 const AVAILABLE = () => isMarionetteFormat() && Modes.edit;
 
-// just past the tip of the limb's chain so it chain solves to pose close to being its rest position
-export function defaultTargetPosition(limb) {
+// the tip of the limb's chain at rest, so a fresh target solves to a pose close to the rest one
+function restTip(limb) {
 	const segments = chainOf(limb);
-	if (!segments.length) return [0, 0, 0];
+	if (!segments.length) return null;
 
 	const last = segments[segments.length - 1];
 	const transform = modelTransformOf(last);
 	const direction = applyQuaternion(transform.quaternion, [0, 0, 1]);
 	const length = lengthOf(last);
 
-	const tip = [
+	return [
 		transform.position[0] + direction[0] * length,
 		transform.position[1] + direction[1] * length,
 		transform.position[2] + direction[2] * length,
 	];
+}
 
-	// NullObject.position is parent-relative, subtract the limb's origin
-	const limbOrigin = isGroup(limb) ? limb.origin : [0, 0, 0];
-	return [tip[0] - limbOrigin[0], tip[1] - limbOrigin[1], tip[2] - limbOrigin[2]];
+// placed in model space and converted through targetLocalPosition, which owns the null object's
+// storage convention, so a limb whose group is not at the origin still gets its target on the tip
+export function defaultTargetPosition(limb) {
+	const tip = restTip(limb);
+	return tip ? targetLocalPosition(limb, tip) : [0, 0, 0];
 }
 
 // halfway out and offset so it reads as a fold hint rather than something to reach
 export function defaultPrimePosition(limb) {
-	const tip = defaultTargetPosition(limb);
-	return [tip[0] * 0.5, tip[1] * 0.5 + 8, tip[2] * 0.5];
+	const segments = chainOf(limb);
+	const tip = restTip(limb);
+	if (!tip) return [0, 0, 0];
+
+	const root = modelTransformOf(segments[0]).position;
+	return targetLocalPosition(limb, [
+		(root[0] + tip[0]) / 2,
+		(root[1] + tip[1]) / 2 + 8,
+		(root[2] + tip[2]) / 2,
+	]);
 }
 
 function addTargetTo(limb, { name, position, type, existing }) {
