@@ -8,7 +8,7 @@
 import { UNITS_PER_BLOCK, TARGET_FABRIK, TARGET_PRIME } from './constants.js';
 import {
 	chainOf, lengthOf, isGroup, isLimb, isMarionetteFormat, targetTypeOf,
-	limbsInAttachOrder, parentSegmentOf,
+	limbsInAttachOrder, parentSegmentOf, followsRootOnly,
 } from './roles.js';
 import {
 	quaternionFromRotation, quaternionMultiply, quaternionConjugate,
@@ -124,11 +124,14 @@ function describeLimb(limb) {
 	const segments = chainOf(limb).filter(segment => lengthOf(segment) > 0);
 	if (!segments.length) return null;
 
+	// a followRootOnly limb has no end effector to aim, so it simulates without a target: nested, the root
+	// comes from its parent part, and unattached with no handle yet it simply sits at rest
+	const followRootOnly = followsRootOnly(limb);
 	const target = targetOf(limb);
-	if (!target) return null;
+	if (!target && !followRootOnly) return null;
 
 	return {
-		limb, segments, target,
+		limb, segments, target, followRootOnly,
 		primeTarget: primeTargetOf(limb),
 		parentSegment: parentSegmentOf(limb),
 		lengths: segments.map(lengthOf),
@@ -138,6 +141,7 @@ function describeLimb(limb) {
 function stillMatches(entry, description) {
 	if (entry.segments.length !== description.segments.length) return false;
 	if (entry.target !== description.target) return false;
+	if (entry.followRootOnly !== description.followRootOnly) return false;
 	if (entry.primeTarget !== description.primeTarget) return false;
 	if (entry.parentSegment !== description.parentSegment) return false;
 	return entry.segments.every((segment, i) =>
@@ -150,6 +154,13 @@ function stillMatches(entry, description) {
 // preferred and the rest pose is only the fallback for a parent limb that has no target and so never solves.
 // that fallback still reads through posed, since an unsimulated limb hanging off a simulated one moves with it
 function rootOf(description, parts, posed) {
+	// the handle leads for a followRootOnly limb, since the root is the only input the runtime has for one
+	// of these -- FabrikAnimator ignores the target entirely. an attached limb falls through to the branch
+	// below, because attachRoot wins there at runtime too, which is what makes its handle dead weight
+	if (description.followRootOnly && !description.parentSegment && description.target) {
+		return scale(targetPosition(description.target, posed), 1 / UNITS_PER_BLOCK);
+	}
+
 	if (description.parentSegment) {
 		const parent = parts.get(description.parentSegment)
 			|| scaleTransform(partTransformOf(description.parentSegment, posed), 1 / UNITS_PER_BLOCK);
@@ -253,6 +264,7 @@ export class Simulation {
 				entry = {
 					segments: description.segments,
 					target: description.target,
+					followRootOnly: description.followRootOnly,
 					primeTarget: description.primeTarget,
 					parentSegment: description.parentSegment,
 					chain: buildChain(description, parts, posed),
@@ -260,8 +272,13 @@ export class Simulation {
 				this.entries.set(limb, entry);
 			}
 
-			const target = scale(targetPosition(description.target, posed), 1 / UNITS_PER_BLOCK);
+			entry.chain.followRootOnly = description.followRootOnly;
 			entry.chain.root = rootOf(description, parts, posed);
+			// solve reads the target only inside the branches followRootOnly turns off, so the root stands in
+			// for a limb that has no handle at all rather than special-casing the call
+			const target = description.target
+				? scale(targetPosition(description.target, posed), 1 / UNITS_PER_BLOCK)
+				: entry.chain.root;
 			entry.chain.primeDirection = primeDirectionOf(description, entry.chain.root, posed);
 			solve(entry.chain, target);
 			this.apply(entry, posed);

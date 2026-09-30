@@ -160,6 +160,8 @@ export function emitEntity(rig, names) {
 				? `\t\t\t\t.segment(${f(run.sizeXZ)}, ${f(run.sizeY)}, ${f(run.lengthBlocks)})`
 				: `\t\t\t\t.segments(${run.count}, ${f(run.sizeXZ)}, ${f(run.sizeY)}, ${f(run.lengthBlocks)})`
 		);
+		// false is the builder default, so only the flagged case is worth a line
+		if (limb.followRootOnly) calls.push('				.followRootOnly(true)');
 		if (limb.primeDirection) {
 			const [x, y, z] = limb.primeDirection;
 			calls.push(`\t\t\t\t.rootPrimeDirection(new Vec3(${d(x)}, ${d(y)}, ${d(z)}))`);
@@ -333,6 +335,7 @@ export function emitSidecar(rig, names) {
 		limbs: rig.limbs.map(limb => ({
 			name: limb.name,
 			field: limb.var,
+			follow_root_only: !!limb.followRootOnly,
 			prime_direction: limb.primeDirection,
 			prime_direction_space: limb.primeDirection ? (limb.attachment ? 'part' : 'body') : null,
 			attachment: limb.attachment && {

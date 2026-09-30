@@ -5,12 +5,13 @@ import { UNITS_PER_BLOCK } from './constants.js';
 import {
 	chainOf, boneOf, exportOriginOf, lengthOf, ownGeometryOf,
 	isGroup, isBone, isSegment, isLimb, isMisnestedLimb, limbsInAttachOrder, parentSegmentOf,
+	followsRootOnly,
 } from './roles.js';
 import {
 	cubeCorners, meshVertexPoints, boundsOfPoints, isUnrotated, worldDirection, worldToPart,
 } from './geometry.js';
 import {
-	primeTargetOf, targetPosition, modelTransformOf, attachmentOffsetOf, partTransformOf,
+	primeTargetOf, targetOf, targetPosition, modelTransformOf, attachmentOffsetOf, partTransformOf,
 } from './simulate.js';
 import { normalize, subtract, scale } from './fabrik.js';
 
@@ -212,6 +213,28 @@ function resolveAttachment(limb, limbGroup, nesting, locationOf) {
 		`it. Move the attachment onto that segment's axis, or angle the segment away from vertical.`];
 }
 
+// a followRootOnly chain has no end effector and FabrikAnimator never reads its target, so any handle it
+// carries drives the editor's preview and nothing else. nested, even that is gone, since attachRoot owns
+// the root at runtime and in the editor alike
+function followRootOnlyWarnings(limb, limbGroup, nesting) {
+	if (!limb.followRootOnly) return [];
+	const warnings = [];
+
+	if (nesting.parentSegment && targetOf(limbGroup)) {
+		warnings.push(`Limb "${limb.name}" follows the root only and is nested in segment ` +
+			`"${nesting.parentSegment.name}", so its root comes from that segment and its IK target does ` +
+			`nothing, in the editor or in game. Delete the target, or untick "Follow root only".`);
+	}
+
+	if (primeTargetOf(limbGroup)) {
+		warnings.push(`Limb "${limb.name}" follows the root only and has a prime target. Priming relays ` +
+			`the chain straight from the root before every solve, which cancels the trailing the flag is ` +
+			`for, so the limb will stay rigid. Delete the prime target, or untick "Follow root only".`);
+	}
+
+	return warnings;
+}
+
 // a nested limb's prime direction rides the same frame the offset does, so it is lost the same way
 function primeDirectionWarnings(limb, nesting) {
 	if (!nesting.parentSegment || !limb.primeDirection) return [];
@@ -265,6 +288,7 @@ export function collectRig(options = {}) {
 			name: limbGroup.name,
 			var: unique(javaIdentifier(limbGroup.name, 'limb')),
 			primeDirection: primeDirectionOf(limbGroup, chain[0], nesting.parentSegment),
+			followRootOnly: followsRootOnly(limbGroup),
 			attachment: null,
 			segments: [],
 		};
@@ -317,6 +341,7 @@ export function collectRig(options = {}) {
 		const nesting = nestingFor.get(limb);
 		warnings.push(...resolveAttachment(limb, groupOf.get(limb), nesting, locationOf));
 		warnings.push(...primeDirectionWarnings(limb, nesting));
+		warnings.push(...followRootOnlyWarnings(limb, groupOf.get(limb), nesting));
 	}
 
 	if (!limbs.length) warnings.push('No limbs with segments were found; nothing to export.');

@@ -4,6 +4,7 @@
 import {
 	FORMAT_ID, ROLE_NONE, ROLE_LIMB, ROLE_SEGMENT, TARGET_FABRIK, TARGET_PRIME,
 } from './constants.js';
+import { isLimb } from './roles.js';
 
 // flags copied from modded_entity so marionette models behave identically in editor
 function baseFlags() {
@@ -80,6 +81,28 @@ export function registerRoleProperty() {
 	});
 }
 
+export function registerFollowRootProperty() {
+	return new Property(Group, 'boolean', 'marionette_follow_root', {
+		default: false,
+		// the element panel replaces input.condition with this one wholesale, so limiting the checkbox to
+		// limbs has to happen here rather than on the input. and an `instance` asks whether to keep a
+		// stored value on merge/copy/reset, not whether to draw anything, so it answers yes regardless of
+		// the selection -- reading the instance's own role there would drop the value of a limb whose
+		// marionette_type has not been loaded onto it yet
+		condition: instance => Format && Format.id === FORMAT_ID
+			&& (!!instance || isLimb(Group.first_selected)),
+		label: 'Follow root only',
+		inputs: {
+			element_panel: {
+				input: {
+					label: 'Follow root only (chain trails the root)',
+					type: 'checkbox',
+				},
+			},
+		},
+	});
+}
+
 export function registerBehaviorOverrides() {
 	const overrides = [];
 
@@ -129,7 +152,7 @@ export function registerTargetProperty() {
 
 export function installFormat() {
 	const format = registerFormat();
-	const properties = [registerRoleProperty(), registerTargetProperty()];
+	const properties = [registerRoleProperty(), registerTargetProperty(), registerFollowRootProperty()];
 	const overrides = registerBehaviorOverrides();
 
 	return {

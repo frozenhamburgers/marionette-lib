@@ -13,6 +13,7 @@ import { installExport } from './export.js';
 import { installSimulation } from './simulate_actions.js';
 import { installNesting } from './nesting.js';
 import { installIkFieldHiding } from './ik.js';
+import { installBoneVisibility } from './bones.js';
 
 (function () {
 	let teardowns = [];
@@ -70,6 +71,7 @@ import { installIkFieldHiding } from './ik.js';
 			step('simulation mode', installSimulation);
 			step('nesting prompt', installNesting);
 			step('Blockbench IK field hiding', installIkFieldHiding);
+			step('bone visibility toggle', installBoneVisibility);
 
 			console.log('[Marionette] loaded; format registered as', FORMAT_ID);
 		},

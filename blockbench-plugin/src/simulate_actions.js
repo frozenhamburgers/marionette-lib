@@ -1,7 +1,7 @@
 // kept apart from simulate.js so solver can be tested indepedently
 
 import { Simulation, targetOf, primeTargetOf, modelTransformOf, targetLocalPosition } from './simulate.js';
-import { isMarionetteFormat, selectedLimb, chainOf, lengthOf } from './roles.js';
+import { isMarionetteFormat, selectedLimb, chainOf, lengthOf, followsRootOnly } from './roles.js';
 import { applyQuaternion } from './geometry.js';
 import { TARGET_PRIME } from './constants.js';
 
@@ -26,7 +26,17 @@ function restTip(limb) {
 
 // placed in model space and converted through targetLocalPosition, which owns the null object's
 // storage convention, so a limb whose group is not at the origin still gets its target on the tip
+//
+// a followRootOnly limb's handle leads the root rather than the tip, so it starts on the root instead and
+// the chain does not lurch the moment simulation comes on
 export function defaultTargetPosition(limb) {
+	const segments = chainOf(limb);
+	if (followsRootOnly(limb)) {
+		return segments.length
+			? targetLocalPosition(limb, modelTransformOf(segments[0]).position)
+			: [0, 0, 0];
+	}
+
 	const tip = restTip(limb);
 	return tip ? targetLocalPosition(limb, tip) : [0, 0, 0];
 }
@@ -83,7 +93,8 @@ function addTargetTo(limb, { name, position, type, existing }) {
 export function buildSimulationActions(simulation) {
 	const addTarget = new Action('marionette_add_target', {
 		name: 'Add Marionette Target',
-		description: 'Add an IK target to the selected limb for the simulation to reach',
+		description: 'Add an IK target to the selected limb for the simulation to reach, ' +
+			'or a root handle for it to trail behind when it follows the root only',
 		icon: 'ads_click',
 		category: 'edit',
 		condition: () => AVAILABLE() && !!selectedLimb(),
@@ -91,7 +102,8 @@ export function buildSimulationActions(simulation) {
 			const limb = selectedLimb();
 			if (!limb) return;
 			addTargetTo(limb, {
-				name: 'target',
+				// the same stored marionette_target either way, only what it drives differs
+				name: followsRootOnly(limb) ? 'root' : 'target',
 				position: defaultTargetPosition(limb),
 				existing: targetOf(limb),
 			});

@@ -4,6 +4,7 @@
 
 import { BONE_ROTATION, DEFAULT_BONE_LENGTH, DEFAULT_BONE_WIDTH } from './constants.js';
 import { bonesOf, isSegment, allSegments, isMarionetteFormat } from './roles.js';
+import { bonesVisible } from './bones.js';
 
 const warned = new WeakSet();
 
@@ -86,6 +87,9 @@ function createBone(group) {
 
 	bone.init();
 	if (typeof Format !== 'undefined' && Format.bone_rig) bone.createUniqueName();
+
+	// born hidden while the outliner bar's toggle is off, or adding a segment pops a bone the user just hid
+	bone.visibility = bonesVisible();
 
 	// if segment was selected every descendant was too and a bone added afterwards must join them
 	if (group.selected && typeof bone.markAsSelected === 'function') bone.markAsSelected();

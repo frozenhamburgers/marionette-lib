@@ -27,6 +27,11 @@ export function isLimb(node) {
 	return getRole(node) === ROLE_LIMB;
 }
 
+// groups authored before the property existed never had it stamped on, so undefined must read as false
+export function followsRootOnly(limb) {
+	return isLimb(limb) && !!limb.marionette_follow_root;
+}
+
 export function isBone(node) {
 	return typeof ArmatureBone !== 'undefined' && node instanceof ArmatureBone;
 }

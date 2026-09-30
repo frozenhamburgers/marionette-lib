@@ -13,130 +13,6 @@
   var TARGET_FABRIK = "fabrik";
   var TARGET_PRIME = "prime";
 
-  // src/format.js
-  function baseFlags() {
-    const source = Formats.modded_entity;
-    if (!source) {
-      console.warn("[Marionette] Formats.modded_entity is missing; using built-in defaults.");
-      return {
-        box_uv: true,
-        box_uv_float_size: true,
-        single_texture: true,
-        bone_rig: true,
-        centered_grid: true,
-        rotate_cubes: true,
-        animation_mode: true,
-        pbr: true,
-        node_name_regex: "\\w"
-      };
-    }
-    return {
-      box_uv: source.box_uv,
-      box_uv_float_size: source.box_uv_float_size,
-      single_texture: source.single_texture,
-      bone_rig: source.bone_rig,
-      centered_grid: source.centered_grid,
-      rotate_cubes: source.rotate_cubes,
-      animation_mode: source.animation_mode,
-      // animation_mode gates Null Object element used as simulation mode's draggable target
-      pbr: source.pbr,
-      node_name_regex: source.node_name_regex
-    };
-  }
-  function registerFormat() {
-    const format = new ModelFormat(FORMAT_ID, {
-      icon: "polyline",
-      category: "minecraft",
-      target: "Minecraft: Java Edition",
-      name: "Marionette Rig",
-      description: "Procedurally animated multipart entity for the Marionette library",
-      show_on_start_screen: true,
-      ...baseFlags()
-    });
-    Object.defineProperty(format, "integer_size", {
-      configurable: true,
-      get() {
-        const setting = typeof settings !== "undefined" && settings.modded_entity_integer_size;
-        return setting ? !!setting.value : false;
-      }
-    });
-    return format;
-  }
-  function registerRoleProperty() {
-    return new Property(Group, "enum", "marionette_type", {
-      default: ROLE_NONE,
-      values: [ROLE_NONE, ROLE_LIMB, ROLE_SEGMENT],
-      condition: { formats: [FORMAT_ID] },
-      label: "Marionette role",
-      inputs: {
-        element_panel: {
-          input: {
-            label: "Marionette role",
-            type: "select",
-            options: {
-              [ROLE_NONE]: "None",
-              [ROLE_LIMB]: "Limb (chain of segments)",
-              [ROLE_SEGMENT]: "Segment (pivot is the joint)"
-            }
-          }
-        }
-      }
-    });
-  }
-  function registerBehaviorOverrides() {
-    const overrides = [];
-    overrides.push(ArmatureBone.addBehaviorOverride({
-      condition: { formats: [FORMAT_ID] },
-      priority: 10,
-      behavior: {
-        // bones never parent other bones, replacing the array (not extending) enforces that
-        parent_types: ["group"],
-        child_types: []
-        // movable/rotatable actually NOT set false here, causes attachment issues for higher level groups
-        // + locking isn't needed for correctness since trying to manually rotate the bones will just cause it to snap back to its segment rotation once released
-        // probably a more elegant way to do this but i can't be bothered for now
-      }
-    }));
-    return overrides;
-  }
-  function registerTargetProperty() {
-    return new Property(NullObject, "enum", "marionette_target", {
-      default: TARGET_FABRIK,
-      values: [TARGET_FABRIK, TARGET_PRIME],
-      // selecting a group marks every descendant selected too (Group.select), so a limb holding a target
-      // would otherwise show this field as if it were the limb's own. an `instance` means the question
-      // is whether to keep a stored value on merge/copy/reset, not whether to draw the input, and that
-      // answer must never depend on the selection or loading a file would drop the value
-      condition: (instance) => Format && Format.id === FORMAT_ID && (!!instance || !Group.first_selected),
-      label: "Marionette target",
-      inputs: {
-        element_panel: {
-          input: {
-            label: "Marionette target",
-            type: "select",
-            options: {
-              [TARGET_FABRIK]: "FABRIK target (chain reaches for it)",
-              [TARGET_PRIME]: "Prime target (biases which way it folds)"
-            }
-          }
-        }
-      }
-    });
-  }
-  function installFormat() {
-    const format = registerFormat();
-    const properties = [registerRoleProperty(), registerTargetProperty()];
-    const overrides = registerBehaviorOverrides();
-    return {
-      format,
-      teardown() {
-        for (const override of overrides) override.delete();
-        for (const property of properties) property.delete();
-        format.delete();
-      }
-    };
-  }
-
   // src/geometry.js
   var DEG = Math.PI / 180;
   function matrixZYX(rotation) {
@@ -359,6 +235,9 @@
   function isLimb(node) {
     return getRole(node) === ROLE_LIMB;
   }
+  function followsRootOnly(limb) {
+    return isLimb(limb) && !!limb.marionette_follow_root;
+  }
   function isBone(node) {
     return typeof ArmatureBone !== "undefined" && node instanceof ArmatureBone;
   }
@@ -507,6 +386,209 @@
     return node && node.marionette_target || TARGET_FABRIK;
   }
 
+  // src/format.js
+  function baseFlags() {
+    const source = Formats.modded_entity;
+    if (!source) {
+      console.warn("[Marionette] Formats.modded_entity is missing; using built-in defaults.");
+      return {
+        box_uv: true,
+        box_uv_float_size: true,
+        single_texture: true,
+        bone_rig: true,
+        centered_grid: true,
+        rotate_cubes: true,
+        animation_mode: true,
+        pbr: true,
+        node_name_regex: "\\w"
+      };
+    }
+    return {
+      box_uv: source.box_uv,
+      box_uv_float_size: source.box_uv_float_size,
+      single_texture: source.single_texture,
+      bone_rig: source.bone_rig,
+      centered_grid: source.centered_grid,
+      rotate_cubes: source.rotate_cubes,
+      animation_mode: source.animation_mode,
+      // animation_mode gates Null Object element used as simulation mode's draggable target
+      pbr: source.pbr,
+      node_name_regex: source.node_name_regex
+    };
+  }
+  function registerFormat() {
+    const format = new ModelFormat(FORMAT_ID, {
+      icon: "polyline",
+      category: "minecraft",
+      target: "Minecraft: Java Edition",
+      name: "Marionette Rig",
+      description: "Procedurally animated multipart entity for the Marionette library",
+      show_on_start_screen: true,
+      ...baseFlags()
+    });
+    Object.defineProperty(format, "integer_size", {
+      configurable: true,
+      get() {
+        const setting = typeof settings !== "undefined" && settings.modded_entity_integer_size;
+        return setting ? !!setting.value : false;
+      }
+    });
+    return format;
+  }
+  function registerRoleProperty() {
+    return new Property(Group, "enum", "marionette_type", {
+      default: ROLE_NONE,
+      values: [ROLE_NONE, ROLE_LIMB, ROLE_SEGMENT],
+      condition: { formats: [FORMAT_ID] },
+      label: "Marionette role",
+      inputs: {
+        element_panel: {
+          input: {
+            label: "Marionette role",
+            type: "select",
+            options: {
+              [ROLE_NONE]: "None",
+              [ROLE_LIMB]: "Limb (chain of segments)",
+              [ROLE_SEGMENT]: "Segment (pivot is the joint)"
+            }
+          }
+        }
+      }
+    });
+  }
+  function registerFollowRootProperty() {
+    return new Property(Group, "boolean", "marionette_follow_root", {
+      default: false,
+      // the element panel replaces input.condition with this one wholesale, so limiting the checkbox to
+      // limbs has to happen here rather than on the input. and an `instance` asks whether to keep a
+      // stored value on merge/copy/reset, not whether to draw anything, so it answers yes regardless of
+      // the selection -- reading the instance's own role there would drop the value of a limb whose
+      // marionette_type has not been loaded onto it yet
+      condition: (instance) => Format && Format.id === FORMAT_ID && (!!instance || isLimb(Group.first_selected)),
+      label: "Follow root only",
+      inputs: {
+        element_panel: {
+          input: {
+            label: "Follow root only (chain trails the root)",
+            type: "checkbox"
+          }
+        }
+      }
+    });
+  }
+  function registerBehaviorOverrides() {
+    const overrides = [];
+    overrides.push(ArmatureBone.addBehaviorOverride({
+      condition: { formats: [FORMAT_ID] },
+      priority: 10,
+      behavior: {
+        // bones never parent other bones, replacing the array (not extending) enforces that
+        parent_types: ["group"],
+        child_types: []
+        // movable/rotatable actually NOT set false here, causes attachment issues for higher level groups
+        // + locking isn't needed for correctness since trying to manually rotate the bones will just cause it to snap back to its segment rotation once released
+        // probably a more elegant way to do this but i can't be bothered for now
+      }
+    }));
+    return overrides;
+  }
+  function registerTargetProperty() {
+    return new Property(NullObject, "enum", "marionette_target", {
+      default: TARGET_FABRIK,
+      values: [TARGET_FABRIK, TARGET_PRIME],
+      // selecting a group marks every descendant selected too (Group.select), so a limb holding a target
+      // would otherwise show this field as if it were the limb's own. an `instance` means the question
+      // is whether to keep a stored value on merge/copy/reset, not whether to draw the input, and that
+      // answer must never depend on the selection or loading a file would drop the value
+      condition: (instance) => Format && Format.id === FORMAT_ID && (!!instance || !Group.first_selected),
+      label: "Marionette target",
+      inputs: {
+        element_panel: {
+          input: {
+            label: "Marionette target",
+            type: "select",
+            options: {
+              [TARGET_FABRIK]: "FABRIK target (chain reaches for it)",
+              [TARGET_PRIME]: "Prime target (biases which way it folds)"
+            }
+          }
+        }
+      }
+    });
+  }
+  function installFormat() {
+    const format = registerFormat();
+    const properties = [registerRoleProperty(), registerTargetProperty(), registerFollowRootProperty()];
+    const overrides = registerBehaviorOverrides();
+    return {
+      format,
+      teardown() {
+        for (const override of overrides) override.delete();
+        for (const property of properties) property.delete();
+        format.delete();
+      }
+    };
+  }
+
+  // src/bones.js
+  var visible = true;
+  function bonesVisible() {
+    return visible;
+  }
+  function allBones() {
+    return allSegments().flatMap(bonesOf);
+  }
+  function applyBoneVisibility(bones, value = visible) {
+    const changed = [];
+    for (const bone of bones) {
+      if (bone.visibility === value) continue;
+      bone.visibility = value;
+      changed.push(bone);
+    }
+    if (!changed.length) return changed;
+    if (typeof Canvas !== "undefined" && Canvas.updateVisibility) Canvas.updateVisibility();
+    return changed;
+  }
+  function buildBoneToggle() {
+    return new Toggle("marionette_toggle_bones", {
+      name: "Show Marionette Bones",
+      description: "Show or hide every segment bone in the viewport; their outliner rows stay put",
+      icon: "humerus",
+      category: "edit",
+      condition: { formats: [FORMAT_ID] },
+      default: true,
+      onChange(value) {
+        visible = value;
+        applyBoneVisibility(allBones(), value);
+      }
+    });
+  }
+  function placeInOutliner(toggle) {
+    const toolbar = typeof Toolbars !== "undefined" && Toolbars.outliner;
+    if (!toolbar) {
+      console.warn("[Marionette] Toolbars.outliner is unavailable; the bone toggle was not added to the outliner bar. It is still in Tools and in the keybind list.");
+      return false;
+    }
+    const anchor = typeof BarItems !== "undefined" && BarItems.outliner_toggle;
+    const index = anchor ? toolbar.children.indexOf(anchor) : -1;
+    toolbar.add(toggle, index === -1 ? void 0 : index + 1);
+    return true;
+  }
+  function installBoneVisibility() {
+    const toggle = buildBoneToggle();
+    const placed = placeInOutliner(toggle);
+    const reapply = () => applyBoneVisibility(allBones());
+    const onSelect = Blockbench.on("select_project", reapply);
+    const onLoad = Blockbench.on("load_project", reapply);
+    return () => {
+      onSelect.delete();
+      onLoad.delete();
+      if (placed && Toolbars.outliner) Toolbars.outliner.remove(toggle);
+      applyBoneVisibility(allBones(), true);
+      toggle.delete();
+    };
+  }
+
   // src/invariants.js
   var warned = /* @__PURE__ */ new WeakSet();
   function normalizeSegment(group) {
@@ -568,6 +650,7 @@
     if (added === void 0) return null;
     bone.init();
     if (typeof Format !== "undefined" && Format.bone_rig) bone.createUniqueName();
+    bone.visibility = bonesVisible();
     if (group.selected && typeof bone.markAsSelected === "function") bone.markAsSelected();
     return bone;
   }
@@ -1259,12 +1342,14 @@
   function describeLimb(limb) {
     const segments = chainOf(limb).filter((segment) => lengthOf(segment) > 0);
     if (!segments.length) return null;
+    const followRootOnly = followsRootOnly(limb);
     const target = targetOf(limb);
-    if (!target) return null;
+    if (!target && !followRootOnly) return null;
     return {
       limb,
       segments,
       target,
+      followRootOnly,
       primeTarget: primeTargetOf(limb),
       parentSegment: parentSegmentOf(limb),
       lengths: segments.map(lengthOf)
@@ -1273,6 +1358,7 @@
   function stillMatches(entry, description) {
     if (entry.segments.length !== description.segments.length) return false;
     if (entry.target !== description.target) return false;
+    if (entry.followRootOnly !== description.followRootOnly) return false;
     if (entry.primeTarget !== description.primeTarget) return false;
     if (entry.parentSegment !== description.parentSegment) return false;
     return entry.segments.every(
@@ -1280,6 +1366,9 @@
     );
   }
   function rootOf(description, parts, posed) {
+    if (description.followRootOnly && !description.parentSegment && description.target) {
+      return scale(targetPosition(description.target, posed), 1 / UNITS_PER_BLOCK);
+    }
     if (description.parentSegment) {
       const parent = parts.get(description.parentSegment) || scaleTransform(partTransformOf(description.parentSegment, posed), 1 / UNITS_PER_BLOCK);
       const offset = scale(
@@ -1360,14 +1449,16 @@
           entry = {
             segments: description.segments,
             target: description.target,
+            followRootOnly: description.followRootOnly,
             primeTarget: description.primeTarget,
             parentSegment: description.parentSegment,
             chain: buildChain(description, parts, posed)
           };
           this.entries.set(limb, entry);
         }
-        const target = scale(targetPosition(description.target, posed), 1 / UNITS_PER_BLOCK);
+        entry.chain.followRootOnly = description.followRootOnly;
         entry.chain.root = rootOf(description, parts, posed);
+        const target = description.target ? scale(targetPosition(description.target, posed), 1 / UNITS_PER_BLOCK) : entry.chain.root;
         entry.chain.primeDirection = primeDirectionOf(description, entry.chain.root, posed);
         solve(entry.chain, target);
         this.apply(entry, posed);
@@ -1602,6 +1693,17 @@
     const perpendicular = Math.hypot(offset[0], offset[1]);
     return [`Limb "${limb.name}" attaches ${perpendicular.toFixed(3)} blocks off the axis of segment "${parentSegment.name}", which points very nearly straight up or down. A part has no roll, so there is no defined sideways direction on it and the limb will not root where the editor shows it. Move the attachment onto that segment's axis, or angle the segment away from vertical.`];
   }
+  function followRootOnlyWarnings(limb, limbGroup, nesting) {
+    if (!limb.followRootOnly) return [];
+    const warnings = [];
+    if (nesting.parentSegment && targetOf(limbGroup)) {
+      warnings.push(`Limb "${limb.name}" follows the root only and is nested in segment "${nesting.parentSegment.name}", so its root comes from that segment and its IK target does nothing, in the editor or in game. Delete the target, or untick "Follow root only".`);
+    }
+    if (primeTargetOf(limbGroup)) {
+      warnings.push(`Limb "${limb.name}" follows the root only and has a prime target. Priming relays the chain straight from the root before every solve, which cancels the trailing the flag is for, so the limb will stay rigid. Delete the prime target, or untick "Follow root only".`);
+    }
+    return warnings;
+  }
   function primeDirectionWarnings(limb, nesting) {
     if (!nesting.parentSegment || !limb.primeDirection) return [];
     if (!losesPerpendicular(nesting.parentSegment, limb.primeDirection)) return [];
@@ -1634,6 +1736,7 @@
         name: limbGroup.name,
         var: unique(javaIdentifier(limbGroup.name, "limb")),
         primeDirection: primeDirectionOf2(limbGroup, chain[0], nesting.parentSegment),
+        followRootOnly: followsRootOnly(limbGroup),
         attachment: null,
         segments: []
       };
@@ -1675,6 +1778,7 @@
       const nesting = nestingFor.get(limb);
       warnings.push(...resolveAttachment(limb, groupOf.get(limb), nesting, locationOf));
       warnings.push(...primeDirectionWarnings(limb, nesting));
+      warnings.push(...followRootOnlyWarnings(limb, groupOf.get(limb), nesting));
     }
     if (!limbs.length) warnings.push("No limbs with segments were found; nothing to export.");
     const textureWidth = options.textureWidth || typeof Project !== "undefined" && Project.texture_width || 16;
@@ -1805,6 +1909,7 @@ ${wrapNames(segmentNames)}
       const calls = runsOf(limb.segments).map(
         (run) => run.count === 1 ? `				.segment(${f(run.sizeXZ)}, ${f(run.sizeY)}, ${f(run.lengthBlocks)})` : `				.segments(${run.count}, ${f(run.sizeXZ)}, ${f(run.sizeY)}, ${f(run.lengthBlocks)})`
       );
+      if (limb.followRootOnly) calls.push("				.followRootOnly(true)");
       if (limb.primeDirection) {
         const [x, y, z] = limb.primeDirection;
         calls.push(`				.rootPrimeDirection(new Vec3(${d(x)}, ${d(y)}, ${d(z)}))`);
@@ -1966,6 +2071,7 @@ public class ${names.className}Renderer extends MobRenderer<${names.className}En
       limbs: rig.limbs.map((limb) => ({
         name: limb.name,
         field: limb.var,
+        follow_root_only: !!limb.followRootOnly,
         prime_direction: limb.primeDirection,
         prime_direction_space: limb.primeDirection ? limb.attachment ? "part" : "body" : null,
         attachment: limb.attachment && {
@@ -2164,6 +2270,10 @@ ${err && err.message}`
     ];
   }
   function defaultTargetPosition(limb) {
+    const segments = chainOf(limb);
+    if (followsRootOnly(limb)) {
+      return segments.length ? targetLocalPosition(limb, modelTransformOf(segments[0]).position) : [0, 0, 0];
+    }
     const tip = restTip(limb);
     return tip ? targetLocalPosition(limb, tip) : [0, 0, 0];
   }
@@ -2212,7 +2322,7 @@ ${err && err.message}`
   function buildSimulationActions(simulation) {
     const addTarget = new Action("marionette_add_target", {
       name: "Add Marionette Target",
-      description: "Add an IK target to the selected limb for the simulation to reach",
+      description: "Add an IK target to the selected limb for the simulation to reach, or a root handle for it to trail behind when it follows the root only",
       icon: "ads_click",
       category: "edit",
       condition: () => AVAILABLE2() && !!selectedLimb(),
@@ -2220,7 +2330,8 @@ ${err && err.message}`
         const limb = selectedLimb();
         if (!limb) return;
         addTargetTo(limb, {
-          name: "target",
+          // the same stored marionette_target either way, only what it drives differs
+          name: followsRootOnly(limb) ? "root" : "target",
           position: defaultTargetPosition(limb),
           existing: targetOf(limb)
         });
@@ -2455,6 +2566,7 @@ The rest of the plugin is still loaded. Please report this with the full error f
         step("simulation mode", installSimulation);
         step("nesting prompt", installNesting);
         step("Blockbench IK field hiding", installIkFieldHiding);
+        step("bone visibility toggle", installBoneVisibility);
         console.log("[Marionette] loaded; format registered as", FORMAT_ID);
       },
       onunload() {

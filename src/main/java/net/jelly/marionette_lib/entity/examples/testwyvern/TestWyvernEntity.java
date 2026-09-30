@@ -52,6 +52,7 @@ public class TestWyvernEntity extends Phantom implements Marionette {
         limb = Limb.builder(this)
                 .segment(0.25F, 0.25F, 0.5F)
                 .segments(4, 0.125F, 0.125F, 0.5F)
+                // the exporter emits this now, off the limb's "Follow root only" checkbox
                 .followRootOnly(true)
                 .build();
 
