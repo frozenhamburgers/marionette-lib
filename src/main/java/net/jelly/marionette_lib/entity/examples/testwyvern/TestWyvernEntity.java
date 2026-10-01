@@ -55,6 +55,14 @@ public class TestWyvernEntity extends Phantom implements Marionette {
         return rig.limbs();
     }
 
+    // plane through the four feet, signed towards the body, so the rig rolls with the entity as it inverts
+    @Override
+    public Vec3 marionetteUp() {
+        Vec3[] feet = new Vec3[legs.size()];
+        for (int i = 0; i < feet.length; i++) feet[i] = legs.get(i).animator().chainEndPos();
+        return Marionette.surfaceNormalToward(position(), feet);
+    }
+
     @Override
     public boolean isMultipartEntity() {
         return true;

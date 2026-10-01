@@ -130,6 +130,15 @@ ${wrapNames(segmentNames)}
 `.replace(/\t/g, '    ');
 }
 
+// builder defaults to (0, 1, 0), so an untouched limb emits nothing and its rig file stays byte-identical
+function isDefaultUp(up) {
+	return Math.abs(up[0]) < 1e-9 && Math.abs(up[1] - 1) < 1e-9 && Math.abs(up[2]) < 1e-9;
+}
+
+function hasUpVector(limb) {
+	return !!limb.upVector && !isDefaultUp(limb.upVector);
+}
+
 function wrapNames(names) {
 	const lines = [];
 	let current = '\t\t\t';
@@ -165,6 +174,10 @@ export function emitRig(rig, names) {
 		);
 		// false is the builder default, so only the flagged case is worth a line
 		if (limb.followRootOnly) calls.push('\t\t\t\t.followRootOnly(true)');
+		if (limb.upVector && !isDefaultUp(limb.upVector)) {
+			const [x, y, z] = limb.upVector;
+			calls.push(`\t\t\t\t.rootUpVector(new Vec3(${d(x)}, ${d(y)}, ${d(z)}))`);
+		}
 		if (limb.primeDirection) {
 			const [x, y, z] = limb.primeDirection;
 			calls.push(`\t\t\t\t.rootPrimeDirection(new Vec3(${d(x)}, ${d(y)}, ${d(z)}))`);
@@ -183,7 +196,7 @@ export function emitRig(rig, names) {
 
 import net.jelly.marionette_lib.utility.Limb;
 import net.jelly.marionette_lib.utility.MarionettePart;
-import net.minecraft.world.entity.Entity;${rig.limbs.some(limb => limb.primeDirection || limb.attachment) ? '\nimport net.minecraft.world.phys.Vec3;' : ''}
+import net.minecraft.world.entity.Entity;${rig.limbs.some(limb => limb.primeDirection || limb.attachment || hasUpVector(limb)) ? '\nimport net.minecraft.world.phys.Vec3;' : ''}
 
 import java.util.List;
 
@@ -397,6 +410,8 @@ export function emitSidecar(rig, names) {
 			follow_root_only: !!limb.followRootOnly,
 			prime_direction: limb.primeDirection,
 			prime_direction_space: limb.primeDirection ? (limb.attachment ? 'part' : 'body') : null,
+			up_vector: limb.upVector || null,
+			up_vector_space: limb.attachment ? 'part' : 'body',
 			attachment: limb.attachment && {
 				limb: limb.attachment.limb,
 				part_name: limb.attachment.partName,

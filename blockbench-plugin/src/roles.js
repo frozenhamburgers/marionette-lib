@@ -3,7 +3,7 @@
 import {
 	FORMAT_ID, ROLE_NONE, ROLE_LIMB, ROLE_SEGMENT, TARGET_FABRIK,
 } from './constants.js';
-import { boneTip, exportOrigin } from './geometry.js';
+import { boneTip, exportOrigin, DEFAULT_UP } from './geometry.js';
 
 export function isMarionetteFormat() {
 	return typeof Format !== 'undefined' && Format && Format.id === FORMAT_ID;
@@ -30,6 +30,13 @@ export function isLimb(node) {
 // groups authored before the property existed never had it stamped on, so undefined must read as false
 export function followsRootOnly(limb) {
 	return isLimb(limb) && !!limb.marionette_follow_root;
+}
+
+// groups authored before the property lack it, and all-zero leaves the frame undefined. both read as the default
+export function upVectorOf(limb) {
+	const up = isLimb(limb) ? limb.marionette_up : null;
+	if (!up || (!up[0] && !up[1] && !up[2])) return DEFAULT_UP.slice();
+	return [up[0], up[1], up[2]];
 }
 
 export function isBone(node) {

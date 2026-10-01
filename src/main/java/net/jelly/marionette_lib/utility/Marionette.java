@@ -23,6 +23,71 @@ import java.util.Set;
 public interface Marionette {
     List<Limb<?>> getLimbs();
 
+    /**
+     * up for this entity, world space. pins the roll of every limb that does not set its own
+     */
+    default Vec3 marionetteUp() {
+        return new Vec3(0, 1, 0);
+    }
+
+    /**
+     * best fit plane normal through {@code points}, Newell's method. winding decides the sign, so go
+     * round the body, not down one side and back: a bowtie cancels and silently falls back to
+     * {@code (0, 1, 0)}, as do fewer than three points and a collinear set. prefer
+     * {@link #surfaceNormalToward(Vec3, Vec3...)}, which has no ordering to get wrong
+     */
+    static Vec3 surfaceNormal(Vec3... points) {
+        if (points.length < 3) return new Vec3(0, 1, 0);
+
+        double x = 0, y = 0, z = 0;
+        for (int i = 0; i < points.length; i++) {
+            Vec3 current = points[i];
+            Vec3 next = points[(i + 1) % points.length];
+            x += (current.y - next.y) * (current.z + next.z);
+            y += (current.z - next.z) * (current.x + next.x);
+            z += (current.x - next.x) * (current.y + next.y);
+        }
+
+        Vec3 normal = new Vec3(x, y, z);
+        if (normal.lengthSqr() < 1.0e-8) return new Vec3(0, 1, 0);
+        return normal.normalize();
+    }
+
+    /**
+     * best fit plane normal through {@code points}, signed towards {@code upPosition} instead of by
+     * winding, so the order the points arrive in does not matter. pass the entity's position and its
+     * feet and the sign follows it when it inverts.
+     * <p>
+     * NOT an overload of {@link #surfaceNormal(Vec3...)} on purpose: a leading {@code Vec3} would make
+     * it the more specific of the two, so existing three-point calls would quietly resolve to it.
+     * <p>
+     * falls back to {@code (0, 1, 0)} for fewer than three points, a collinear set, or an
+     * {@code upPosition} already in the plane, where there is no side to pick
+     */
+    static Vec3 surfaceNormalToward(Vec3 upPosition, Vec3... points) {
+        if (points.length < 3) return new Vec3(0, 1, 0);
+
+        Vec3 centre = Vec3.ZERO;
+        for (Vec3 point : points) centre = centre.add(point);
+        centre = centre.scale(1.0 / points.length);
+
+        Vec3 reference = upPosition.subtract(centre);
+        if (reference.lengthSqr() < 1.0e-8) return new Vec3(0, 1, 0);
+
+        // every pair of spokes off the centre gives a normal, area weighted by the cross product's own
+        // length, flipped onto the reference's side before summing. that flip drops the winding dependence
+        Vec3 normal = Vec3.ZERO;
+        for (int i = 0; i < points.length; i++) {
+            for (int j = i + 1; j < points.length; j++) {
+                Vec3 term = points[i].subtract(centre).cross(points[j].subtract(centre));
+                normal = normal.add(term.dot(reference) < 0 ? term.reverse() : term);
+            }
+        }
+
+        if (normal.lengthSqr() < 1.0e-8) return new Vec3(0, 1, 0);
+        return normal.normalize();
+    }
+
     default PartEntity<?>[] getMarionetteParts() {
         List<PartEntity<?>> allParts = new ArrayList<>();
         for (Limb<?> limb : getLimbs()) {

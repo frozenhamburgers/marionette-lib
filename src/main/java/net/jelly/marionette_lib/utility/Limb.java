@@ -53,6 +53,8 @@ public class Limb<T extends MarionettePart<?>> {
         private Vec3 rootOffset = Vec3.ZERO;
         private Vec3 primeDirection = null;
         private Vec3 rootPrimeDirection = null;
+        private Vec3 upVector = null;
+        private Vec3 rootUpVector = null;
 
         private Builder(P parent, PartFactory<P, T> factory) {
             this.parent = parent;
@@ -103,6 +105,20 @@ public class Limb<T extends MarionettePart<?>> {
             return this;
         }
 
+        /** See {@link FabrikAnimator#setUpVector(Vec3)} */
+        public Builder<P, T> upVector(Vec3 upVector) {
+            this.upVector = upVector;
+            this.rootUpVector = null;
+            return this;
+        }
+
+        /** See {@link FabrikAnimator#setRootUpVector(Vec3)} */
+        public Builder<P, T> rootUpVector(Vec3 rootUpVector) {
+            this.rootUpVector = rootUpVector;
+            this.upVector = null;
+            return this;
+        }
+
         @SuppressWarnings("unchecked")
         public Limb<T> build() {
             if (parts.isEmpty()) throw new IllegalStateException("Limb must have at least one segment");
@@ -113,6 +129,8 @@ public class Limb<T extends MarionettePart<?>> {
             if (rootPart != null) animator.attachRoot(rootPart, rootOffset);
             if (primeDirection != null) animator.setPrimeDirection(primeDirection);
             if (rootPrimeDirection != null) animator.setRootPrimeDirection(rootPrimeDirection);
+            if (upVector != null) animator.setUpVector(upVector);
+            if (rootUpVector != null) animator.setRootUpVector(rootUpVector);
             return new Limb<>(array, animator);
         }
     }

@@ -8,11 +8,11 @@
 import { UNITS_PER_BLOCK, TARGET_FABRIK, TARGET_PRIME } from './constants.js';
 import {
 	chainOf, lengthOf, isGroup, isLimb, isMarionetteFormat, targetTypeOf,
-	limbsInAttachOrder, parentSegmentOf, followsRootOnly,
+	limbsInAttachOrder, parentSegmentOf, followsRootOnly, upVectorOf, limbOf,
 } from './roles.js';
 import {
 	quaternionFromRotation, quaternionMultiply, quaternionConjugate,
-	applyQuaternion, partQuaternion, partToWorld, worldToPart,
+	applyQuaternion, partFrame, partToWorld, worldToPart, DEFAULT_UP,
 } from './geometry.js';
 import { createChain, solve, jointsOf, add, subtract, scale, normalize } from './fabrik.js';
 
@@ -105,7 +105,23 @@ export function partTransformOf(segment, posed = NO_POSE) {
 	return {
 		position: add(transform.position, scale(direction, lengthOf(segment) / 2)),
 		direction,
+		up: partUpOf(segment, posed),
 	};
+}
+
+// up the segment's part gets at runtime, world space. authored in the frame the limb is rooted in, as
+// FabrikAnimator.resolveUpVector reads it back. recursion stops at the outermost limb
+export function partUpOf(segment, posed = NO_POSE) {
+	const limb = limbOf(segment);
+	if (!limb) return DEFAULT_UP.slice();
+
+	const authored = upVectorOf(limb);
+	const parentSegment = parentSegmentOf(limb);
+	if (!parentSegment) return authored;
+
+	const parent = modelTransformOf(parentSegment, posed);
+	const parentDirection = applyQuaternion(parent.quaternion, [0, 0, 1]);
+	return partToWorld(parentDirection, partUpOf(parentSegment, posed), authored);
 }
 
 // where the chain root sits in the parent part's own frame, read off the authored rest pose since that
@@ -117,7 +133,7 @@ export function attachmentOffsetOf(limb, parentSegment) {
 
 	const root = modelTransformOf(segments[0]).position;
 	const parent = partTransformOf(parentSegment);
-	return worldToPart(parent.direction, subtract(root, parent.position));
+	return worldToPart(parent.direction, parent.up, subtract(root, parent.position));
 }
 
 function describeLimb(limb) {
@@ -168,13 +184,23 @@ function rootOf(description, parts, posed) {
 			attachmentOffsetOf(description.limb, description.parentSegment),
 			1 / UNITS_PER_BLOCK,
 		);
-		return add(parent.position, partToWorld(parent.direction, offset));
+		return add(parent.position, partToWorld(parent.direction, parent.up, offset));
 	}
 	return scale(modelTransformOf(description.segments[0], posed).position, 1 / UNITS_PER_BLOCK);
 }
 
+// authored up to world space, branching as rootOf does: nested reads it in the parent part's frame, else verbatim
+function upOf(description, parts, posed) {
+	const authored = upVectorOf(description.limb);
+	if (!description.parentSegment) return authored;
+
+	const parent = parts.get(description.parentSegment)
+		|| partTransformOf(description.parentSegment, posed);
+	return partToWorld(parent.direction, parent.up, authored);
+}
+
 function scaleTransform(transform, factor) {
-	return { position: scale(transform.position, factor), direction: transform.direction };
+	return { position: scale(transform.position, factor), direction: transform.direction, up: transform.up };
 }
 
 function buildChain(description, parts, posed) {
@@ -280,12 +306,15 @@ export class Simulation {
 				? scale(targetPosition(description.target, posed), 1 / UNITS_PER_BLOCK)
 				: entry.chain.root;
 			entry.chain.primeDirection = primeDirectionOf(description, entry.chain.root, posed);
+			// parent's solved pose, not its authored one, so a nested limb's roll rides where the parent ended up
+			entry.up = upOf(description, parts, posed);
 			solve(entry.chain, target);
 			this.apply(entry, posed);
 
 			entry.segments.forEach((segment, i) => parts.set(segment, {
 				position: entry.chain.parts[i].position,
 				direction: entry.chain.parts[i].direction,
+				up: entry.up,
 			}));
 		}
 
@@ -316,7 +345,7 @@ export class Simulation {
 				// everything parented under a posed segment -- a nested limb, its targets -- rides on this one,
 				// while rootOf resolves the attachment in part space. reaching for a target a roll away from
 				// where it is drawn is what that mismatch looks like. this is also the frame the renderer uses
-				quaternion: partQuaternion(entry.chain.parts[i].direction),
+				quaternion: partFrame(entry.chain.parts[i].direction, entry.up),
 			};
 
 			const parent = modelTransformOf(group.parent, posed);

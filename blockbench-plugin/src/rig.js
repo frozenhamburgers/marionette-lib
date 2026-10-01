@@ -5,13 +5,15 @@ import { UNITS_PER_BLOCK } from './constants.js';
 import {
 	chainOf, boneOf, exportOriginOf, lengthOf, ownGeometryOf,
 	isGroup, isBone, isSegment, isLimb, isMisnestedLimb, limbsInAttachOrder, parentSegmentOf,
-	followsRootOnly,
+	followsRootOnly, upVectorOf,
 } from './roles.js';
 import {
 	cubeCorners, meshVertexPoints, boundsOfPoints, isUnrotated, worldDirection, worldToPart,
+	partToWorld,
 } from './geometry.js';
 import {
 	primeTargetOf, targetOf, targetPosition, modelTransformOf, attachmentOffsetOf, partTransformOf,
+	partUpOf,
 } from './simulate.js';
 import { normalize, subtract, scale } from './fabrik.js';
 
@@ -170,7 +172,8 @@ function primeDirectionOf(limbGroup, firstSegment, parentSegment) {
 	// a 180 yaw, which shifts the part frame's own yaw by 180 too, so it cancels out of a part-space
 	// coordinate. flipping the vector alone would leave it a half turn off
 	if (!parentSegment) return worldDirection(direction);
-	return worldToPart(partTransformOf(parentSegment).direction, direction);
+	const parent = partTransformOf(parentSegment);
+	return worldToPart(parent.direction, parent.up, direction);
 }
 
 // which segment of which other limb this one hangs off, resolved once so the attachment offset and the
@@ -208,9 +211,9 @@ function resolveAttachment(limb, limbGroup, nesting, locationOf) {
 	if (!losesPerpendicular(parentSegment, offset)) return [];
 	const perpendicular = Math.hypot(offset[0], offset[1]);
 	return [`Limb "${limb.name}" attaches ${perpendicular.toFixed(3)} blocks off the axis of segment ` +
-		`"${parentSegment.name}", which points very nearly straight up or down. A part has no roll, so ` +
-		`there is no defined sideways direction on it and the limb will not root where the editor shows ` +
-		`it. Move the attachment onto that segment's axis, or angle the segment away from vertical.`];
+		`"${parentSegment.name}", which runs along that segment's own up vector. A part's sideways ` +
+		`direction is undefined there, so the limb will not root where the editor shows it. Move the ` +
+		`attachment onto that segment's axis, or point that limb's up vector somewhere else.`];
 }
 
 // a followRootOnly chain has no end effector and FabrikAnimator never reads its target, so any handle it
@@ -235,23 +238,48 @@ function followRootOnlyWarnings(limb, limbGroup, nesting) {
 	return warnings;
 }
 
-// a nested limb's prime direction rides the same frame the offset does, so it is lost the same way
+// a nested limb's up rides the same frame its offset does, so it is lost the same way
 function primeDirectionWarnings(limb, nesting) {
 	if (!nesting.parentSegment || !limb.primeDirection) return [];
 	if (!losesPerpendicular(nesting.parentSegment, limb.primeDirection)) return [];
 
 	return [`Limb "${limb.name}" is primed across the axis of segment "${nesting.parentSegment.name}", ` +
-		`which points very nearly straight up or down. A part has no roll, so there is no defined ` +
-		`sideways direction on it and the bias will swing around as that segment wobbles. Prime it ` +
-		`along the segment's axis, or angle the segment away from vertical.`];
+		`which runs along that segment's own up vector. A part's sideways direction is undefined there, ` +
+		`so the bias will swing around as the segment wobbles. Prime it along the segment's axis, or ` +
+		`point that limb's up vector somewhere else.`];
 }
 
-// a part carries a direction and no roll, so which way "sideways" points is undefined once the
-// direction goes vertical, and only the axial component of a part-space vector survives the trip. see
-// MarionettePart.partToWorld
+// limb pointing along its own up sits on the pole, roll snaps as it crosses
+// only the rest pose to go on, so one that reaches the pole mid-animation slips through
+function upVectorWarnings(limb, limbGroup, chain) {
+	const up = upVectorOf(limbGroup);
+	const direction = partTransformOf(chain[0]).direction;
+	const parentSegment = parentSegmentOf(limbGroup);
+	const worldUp = parentSegment
+		? partToWorld(partTransformOf(parentSegment).direction, partUpOf(parentSegment), up)
+		: up;
+
+	if (Math.hypot(...crossOf(direction, worldUp)) > 0.05) return [];
+	return [`Limb "${limb.name}" points along its own up vector, so its roll is undefined and will snap ` +
+		`as it crosses. Point its up vector somewhere the limb never does.`];
+}
+
+// the frame FabrikAnimator.resolveUpVector reads it back in, same trip primeDirectionOf makes
+// nested: parent's frame, where the half turn cancels since the whole frame makes it too. else body frame, where it does not
+function exportedUpOf(limbGroup, parentSegment) {
+	const up = upVectorOf(limbGroup);
+	return parentSegment ? up : worldDirection(up);
+}
+
+function crossOf(a, b) {
+	return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+}
+
+// sideways is undefined once the direction runs along the up vector, only the axial component survives. see MarionettePart.partToWorld
 function losesPerpendicular(parentSegment, vector) {
 	if (Math.hypot(vector[0], vector[1]) <= 1e-4) return false;
-	return Math.abs(partTransformOf(parentSegment).direction[1]) > 0.999;
+	const transform = partTransformOf(parentSegment);
+	return Math.hypot(...crossOf(transform.direction, transform.up)) < 0.05;
 }
 
 /** @returns {{limbs: Array, segments: Array, textureWidth: number, textureHeight: number, shadowRadius: number, warnings: string[]}} */
@@ -288,6 +316,7 @@ export function collectRig(options = {}) {
 			name: limbGroup.name,
 			var: unique(javaIdentifier(limbGroup.name, 'limb')),
 			primeDirection: primeDirectionOf(limbGroup, chain[0], nesting.parentSegment),
+			upVector: exportedUpOf(limbGroup, nesting.parentSegment),
 			followRootOnly: followsRootOnly(limbGroup),
 			attachment: null,
 			segments: [],
@@ -341,6 +370,7 @@ export function collectRig(options = {}) {
 		const nesting = nestingFor.get(limb);
 		warnings.push(...resolveAttachment(limb, groupOf.get(limb), nesting, locationOf));
 		warnings.push(...primeDirectionWarnings(limb, nesting));
+		warnings.push(...upVectorWarnings(limb, groupOf.get(limb), chainOf(groupOf.get(limb))));
 		warnings.push(...followRootOnlyWarnings(limb, groupOf.get(limb), nesting));
 	}
 

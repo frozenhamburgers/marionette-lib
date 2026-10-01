@@ -103,6 +103,25 @@ export function registerFollowRootProperty() {
 	});
 }
 
+export function registerUpProperty() {
+	return new Property(Group, 'vector', 'marionette_up', {
+		default: [0, 1, 0],
+		// same trap as the checkbox above: element panel takes this over input.condition, and an instance asks whether to keep a value not whether to draw
+		condition: instance => Format && Format.id === FORMAT_ID
+			&& (!!instance || isLimb(Group.first_selected)),
+		label: 'Up vector',
+		inputs: {
+			element_panel: {
+				input: {
+					label: 'Up vector (pins the limb\'s roll)',
+					type: 'vector',
+					dimensions: 3,
+				},
+			},
+		},
+	});
+}
+
 export function registerBehaviorOverrides() {
 	const overrides = [];
 
@@ -152,7 +171,10 @@ export function registerTargetProperty() {
 
 export function installFormat() {
 	const format = registerFormat();
-	const properties = [registerRoleProperty(), registerTargetProperty(), registerFollowRootProperty()];
+	const properties = [
+		registerRoleProperty(), registerTargetProperty(), registerFollowRootProperty(),
+		registerUpProperty(),
+	];
 	const overrides = registerBehaviorOverrides();
 
 	return {

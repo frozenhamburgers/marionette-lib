@@ -14,6 +14,9 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.entity.PartEntity;
+import org.joml.Matrix3f;
+import org.joml.Quaternionf;
+import org.joml.Vector3f;
 
 /**
  * One segment of a {@link Limb}. Directly instantiable for the common case
@@ -21,10 +24,13 @@ import net.minecraftforge.entity.PartEntity;
  * Subclass only when a segment needs custom hit/interaction behavior.
  */
 public class MarionettePart<T extends Entity> extends PartEntity<T> {
+    private static final Vec3 DEFAULT_UP = new Vec3(0, 1, 0);
+
     private Vec3 newPosition = null;
     private final EntityDimensions size;
     public float length;
     public Vec3 direction = new Vec3(0, 1, 0);
+    private Vec3 up = DEFAULT_UP;
 
     public MarionettePart(T parent, float sizeXZ, float sizeY, float length) {
         super(parent);
@@ -152,37 +158,72 @@ public class MarionettePart<T extends Entity> extends PartEntity<T> {
         this.direction = direction.normalize();
     }
 
-    /** yaw of {@link #getPartDirection()}, see {@link #partToWorld(Vec3)} */
+    /** yaw of {@link #getPartDirection()}. describes the direction, does NOT define part space, see {@link #partToWorld(Vec3)} */
     public float partYaw() {
         Vec3 dir = direction.normalize();
         return (float) Math.atan2(dir.x, dir.z);
     }
 
-    /** pitch of {@link #getPartDirection()}, see {@link #partToWorld(Vec3)} */
+    /** pitch of {@link #getPartDirection()}. describes the direction, does NOT define part space, see {@link #partToWorld(Vec3)} */
     public float partPitch() {
         Vec3 dir = direction.normalize();
         return (float) Math.asin(Mth.clamp(dir.y, -1, 1));
     }
 
+    /** up for this part, world space. written by {@link FabrikAnimator} every tick */
+    public Vec3 getUpVector() {
+        return up;
+    }
+
+    public void setUpVector(Vec3 up) {
+        this.up = up == null ? DEFAULT_UP : up;
+    }
+
     /**
-     * Part space to world. Part space is +Z along {@link #getPartDirection()}, with roll fixed at 0
-     * and +Y up, which is the frame {@link MarionetteModel} renders the part's geometry in for now
-     * Single definition of part space.
+     * part local to world, +Z along {@link #getPartDirection()} and +Y as near {@link #getUpVector()} as
+     * that allows. single definition of part space, {@link #partToWorld(Vec3)} and
+     * {@link MarionetteModel} both read it
+     */
+    public Quaternionf partFrame() {
+        Vector3f forward = new Vector3f((float) direction.x, (float) direction.y, (float) direction.z);
+        if (forward.lengthSquared() < 1.0e-8f) forward.set(0, 1, 0);
+        forward.normalize();
+
+        Vector3f sideways = upFor().cross(forward, new Vector3f());
+        // up along the direction picks out no sideways. any axis off it will do, this only keeps the
+        // frame finite. it snaps here, see partToWorld
+        if (sideways.lengthSquared() < 1.0e-10f) {
+            Vector3f fallback = Math.abs(forward.y) > 0.9f ? new Vector3f(0, 0, 1) : new Vector3f(0, 1, 0);
+            sideways = fallback.cross(forward, new Vector3f());
+        }
+        sideways.normalize();
+
+        Vector3f upward = forward.cross(sideways, new Vector3f());
+        return new Quaternionf().setFromNormalized(new Matrix3f(sideways, upward, forward));
+    }
+
+    private Vector3f upFor() {
+        Vector3f u = new Vector3f((float) up.x, (float) up.y, (float) up.z);
+        if (u.lengthSquared() < 1.0e-8f) u.set(0, 1, 0);
+        return u.normalize();
+    }
+
+    /**
+     * part space to world, the frame {@link MarionetteModel} renders geometry in.
      * <p>
-     * A part carries a direction and no roll, so that last degree of freedom has to be pinned by some
-     * convention, since roll 0 is singular where the direction is vertical, yaw jumps as the direction
-     * crosses +Y. A {@code local} with a component perpendicular to the axis will thus swing
-     * around on a near-vertical part, which is acceptable for now
-     * Purely axial offsets, {@code (0, 0, z)}, are immune.
+     * roll comes from {@link #getUpVector()}, so the frame is undefined where the direction runs along it
+     * and an off-axis {@code local} snaps as the direction crosses. that pole cannot be removed, only
+     * moved, so a limb's up SHOULD point somewhere the limb never does. axial offsets are immune
      */
     public Vec3 partToWorld(Vec3 local) {
-        // Vec3.xRot(a) is Rx(-a) while Vec3.yRot(a) is Ry(a), so pitch is not negated here
-        return local.xRot(partPitch()).yRot(partYaw());
+        Vector3f v = partFrame().transform(new Vector3f((float) local.x, (float) local.y, (float) local.z));
+        return new Vec3(v.x, v.y, v.z);
     }
 
     /** inverse of {@link #partToWorld(Vec3)} */
     public Vec3 worldToPart(Vec3 world) {
-        return world.yRot(-partYaw()).xRot(-partPitch());
+        Vector3f v = partFrame().transformInverse(new Vector3f((float) world.x, (float) world.y, (float) world.z));
+        return new Vec3(v.x, v.y, v.z);
     }
 
     public Vec3 getRootPos() {

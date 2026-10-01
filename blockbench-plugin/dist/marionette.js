@@ -184,38 +184,33 @@
     if (d2 < 1e-4) return [0, 0, 0];
     return [v[0] / d2, v[1] / d2, v[2] / d2];
   }
-  function partFrameAngles(direction) {
-    const d2 = unitVector(direction);
-    return {
-      yaw: Math.atan2(d2[0], d2[2]),
-      pitch: Math.asin(Math.max(-1, Math.min(1, d2[1])))
-    };
+  var DEFAULT_UP = [0, 1, 0];
+  function crossProduct(a, b) {
+    return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
   }
-  function xRot(v, a) {
-    const c = Math.cos(a), s = Math.sin(a);
-    return [v[0], v[1] * c + v[2] * s, v[2] * c - v[1] * s];
-  }
-  function yRot(v, a) {
-    const c = Math.cos(a), s = Math.sin(a);
-    return [v[0] * c + v[2] * s, v[1], v[2] * c - v[0] * s];
-  }
-  function partToWorld(direction, local) {
-    const { yaw, pitch } = partFrameAngles(direction);
-    return yRot(xRot(local, pitch), yaw);
-  }
-  function worldToPart(direction, world) {
-    const { yaw, pitch } = partFrameAngles(direction);
-    return xRot(yRot(world, -yaw), -pitch);
-  }
-  function partQuaternion(direction) {
-    const { yaw, pitch } = partFrameAngles(direction);
-    const cy = Math.cos(yaw), sy = Math.sin(yaw);
-    const cp = Math.cos(pitch), sp = Math.sin(pitch);
+  function partFrame(direction, up = DEFAULT_UP) {
+    let forward = unitVector(direction);
+    if (!forward[0] && !forward[1] && !forward[2]) forward = [0, 1, 0];
+    let upward = unitVector(up);
+    if (!upward[0] && !upward[1] && !upward[2]) upward = DEFAULT_UP;
+    let sideways = crossProduct(upward, forward);
+    if (Math.hypot(...sideways) < 1e-5) {
+      const fallback = Math.abs(forward[1]) > 0.9 ? [0, 0, 1] : [0, 1, 0];
+      sideways = crossProduct(fallback, forward);
+    }
+    sideways = unitVector(sideways);
+    const vertical = crossProduct(forward, sideways);
     return quaternionFromMatrix([
-      [cy, -sy * sp, sy * cp],
-      [0, cp, sp],
-      [-sy, -cy * sp, cy * cp]
+      [sideways[0], vertical[0], forward[0]],
+      [sideways[1], vertical[1], forward[1]],
+      [sideways[2], vertical[2], forward[2]]
     ]);
+  }
+  function partToWorld(direction, up, local) {
+    return applyQuaternion(partFrame(direction, up), local);
+  }
+  function worldToPart(direction, up, world) {
+    return applyQuaternion(quaternionConjugate(partFrame(direction, up)), world);
   }
 
   // src/roles.js
@@ -237,6 +232,11 @@
   }
   function followsRootOnly(limb) {
     return isLimb(limb) && !!limb.marionette_follow_root;
+  }
+  function upVectorOf(limb) {
+    const up = isLimb(limb) ? limb.marionette_up : null;
+    if (!up || !up[0] && !up[1] && !up[2]) return DEFAULT_UP.slice();
+    return [up[0], up[1], up[2]];
   }
   function isBone(node) {
     return typeof ArmatureBone !== "undefined" && node instanceof ArmatureBone;
@@ -476,6 +476,23 @@
       }
     });
   }
+  function registerUpProperty() {
+    return new Property(Group, "vector", "marionette_up", {
+      default: [0, 1, 0],
+      // same trap as the checkbox above: element panel takes this over input.condition, and an instance asks whether to keep a value not whether to draw
+      condition: (instance) => Format && Format.id === FORMAT_ID && (!!instance || isLimb(Group.first_selected)),
+      label: "Up vector",
+      inputs: {
+        element_panel: {
+          input: {
+            label: "Up vector (pins the limb's roll)",
+            type: "vector",
+            dimensions: 3
+          }
+        }
+      }
+    });
+  }
   function registerBehaviorOverrides() {
     const overrides = [];
     overrides.push(ArmatureBone.addBehaviorOverride({
@@ -518,7 +535,12 @@
   }
   function installFormat() {
     const format = registerFormat();
-    const properties = [registerRoleProperty(), registerTargetProperty(), registerFollowRootProperty()];
+    const properties = [
+      registerRoleProperty(),
+      registerTargetProperty(),
+      registerFollowRootProperty(),
+      registerUpProperty()
+    ];
     const overrides = registerBehaviorOverrides();
     return {
       format,
@@ -1329,15 +1351,26 @@
     const direction = applyQuaternion(transform.quaternion, [0, 0, 1]);
     return {
       position: add(transform.position, scale(direction, lengthOf(segment) / 2)),
-      direction
+      direction,
+      up: partUpOf(segment, posed)
     };
+  }
+  function partUpOf(segment, posed = NO_POSE) {
+    const limb = limbOf(segment);
+    if (!limb) return DEFAULT_UP.slice();
+    const authored = upVectorOf(limb);
+    const parentSegment = parentSegmentOf(limb);
+    if (!parentSegment) return authored;
+    const parent = modelTransformOf(parentSegment, posed);
+    const parentDirection = applyQuaternion(parent.quaternion, [0, 0, 1]);
+    return partToWorld(parentDirection, partUpOf(parentSegment, posed), authored);
   }
   function attachmentOffsetOf(limb, parentSegment) {
     const segments = chainOf(limb);
     if (!segments.length) return [0, 0, 0];
     const root = modelTransformOf(segments[0]).position;
     const parent = partTransformOf(parentSegment);
-    return worldToPart(parent.direction, subtract(root, parent.position));
+    return worldToPart(parent.direction, parent.up, subtract(root, parent.position));
   }
   function describeLimb(limb) {
     const segments = chainOf(limb).filter((segment) => lengthOf(segment) > 0);
@@ -1375,12 +1408,18 @@
         attachmentOffsetOf(description.limb, description.parentSegment),
         1 / UNITS_PER_BLOCK
       );
-      return add(parent.position, partToWorld(parent.direction, offset));
+      return add(parent.position, partToWorld(parent.direction, parent.up, offset));
     }
     return scale(modelTransformOf(description.segments[0], posed).position, 1 / UNITS_PER_BLOCK);
   }
+  function upOf(description, parts, posed) {
+    const authored = upVectorOf(description.limb);
+    if (!description.parentSegment) return authored;
+    const parent = parts.get(description.parentSegment) || partTransformOf(description.parentSegment, posed);
+    return partToWorld(parent.direction, parent.up, authored);
+  }
   function scaleTransform(transform, factor) {
-    return { position: scale(transform.position, factor), direction: transform.direction };
+    return { position: scale(transform.position, factor), direction: transform.direction, up: transform.up };
   }
   function buildChain(description, parts, posed) {
     const directions = description.segments.map(
@@ -1460,11 +1499,13 @@
         entry.chain.root = rootOf(description, parts, posed);
         const target = description.target ? scale(targetPosition(description.target, posed), 1 / UNITS_PER_BLOCK) : entry.chain.root;
         entry.chain.primeDirection = primeDirectionOf(description, entry.chain.root, posed);
+        entry.up = upOf(description, parts, posed);
         solve(entry.chain, target);
         this.apply(entry, posed);
         entry.segments.forEach((segment, i) => parts.set(segment, {
           position: entry.chain.parts[i].position,
-          direction: entry.chain.parts[i].direction
+          direction: entry.chain.parts[i].direction,
+          up: entry.up
         }));
       }
       for (const limb of [...this.entries.keys()]) {
@@ -1490,7 +1531,7 @@
           // everything parented under a posed segment -- a nested limb, its targets -- rides on this one,
           // while rootOf resolves the attachment in part space. reaching for a target a roll away from
           // where it is drawn is what that mismatch looks like. this is also the frame the renderer uses
-          quaternion: partQuaternion(entry.chain.parts[i].direction)
+          quaternion: partFrame(entry.chain.parts[i].direction, entry.up)
         };
         const parent = modelTransformOf(group.parent, posed);
         const inverse = quaternionConjugate(parent.quaternion);
@@ -1666,7 +1707,8 @@
     const direction = normalize(subtract(targetPosition(prime), root));
     if (!direction[0] && !direction[1] && !direction[2]) return null;
     if (!parentSegment) return worldDirection(direction);
-    return worldToPart(partTransformOf(parentSegment).direction, direction);
+    const parent = partTransformOf(parentSegment);
+    return worldToPart(parent.direction, parent.up, direction);
   }
   function nestingOf(limbGroup) {
     if (isMisnestedLimb(limbGroup)) return { misnested: true, parentSegment: null };
@@ -1691,7 +1733,7 @@
     };
     if (!losesPerpendicular(parentSegment, offset)) return [];
     const perpendicular = Math.hypot(offset[0], offset[1]);
-    return [`Limb "${limb.name}" attaches ${perpendicular.toFixed(3)} blocks off the axis of segment "${parentSegment.name}", which points very nearly straight up or down. A part has no roll, so there is no defined sideways direction on it and the limb will not root where the editor shows it. Move the attachment onto that segment's axis, or angle the segment away from vertical.`];
+    return [`Limb "${limb.name}" attaches ${perpendicular.toFixed(3)} blocks off the axis of segment "${parentSegment.name}", which runs along that segment's own up vector. A part's sideways direction is undefined there, so the limb will not root where the editor shows it. Move the attachment onto that segment's axis, or point that limb's up vector somewhere else.`];
   }
   function followRootOnlyWarnings(limb, limbGroup, nesting) {
     if (!limb.followRootOnly) return [];
@@ -1707,11 +1749,27 @@
   function primeDirectionWarnings(limb, nesting) {
     if (!nesting.parentSegment || !limb.primeDirection) return [];
     if (!losesPerpendicular(nesting.parentSegment, limb.primeDirection)) return [];
-    return [`Limb "${limb.name}" is primed across the axis of segment "${nesting.parentSegment.name}", which points very nearly straight up or down. A part has no roll, so there is no defined sideways direction on it and the bias will swing around as that segment wobbles. Prime it along the segment's axis, or angle the segment away from vertical.`];
+    return [`Limb "${limb.name}" is primed across the axis of segment "${nesting.parentSegment.name}", which runs along that segment's own up vector. A part's sideways direction is undefined there, so the bias will swing around as the segment wobbles. Prime it along the segment's axis, or point that limb's up vector somewhere else.`];
+  }
+  function upVectorWarnings(limb, limbGroup, chain) {
+    const up = upVectorOf(limbGroup);
+    const direction = partTransformOf(chain[0]).direction;
+    const parentSegment = parentSegmentOf(limbGroup);
+    const worldUp = parentSegment ? partToWorld(partTransformOf(parentSegment).direction, partUpOf(parentSegment), up) : up;
+    if (Math.hypot(...crossOf(direction, worldUp)) > 0.05) return [];
+    return [`Limb "${limb.name}" points along its own up vector, so its roll is undefined and will snap as it crosses. Point its up vector somewhere the limb never does.`];
+  }
+  function exportedUpOf(limbGroup, parentSegment) {
+    const up = upVectorOf(limbGroup);
+    return parentSegment ? up : worldDirection(up);
+  }
+  function crossOf(a, b) {
+    return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
   }
   function losesPerpendicular(parentSegment, vector) {
     if (Math.hypot(vector[0], vector[1]) <= 1e-4) return false;
-    return Math.abs(partTransformOf(parentSegment).direction[1]) > 0.999;
+    const transform = partTransformOf(parentSegment);
+    return Math.hypot(...crossOf(transform.direction, transform.up)) < 0.05;
   }
   function collectRig(options = {}) {
     const isCube = options.isCube || ((el) => typeof Cube !== "undefined" && el instanceof Cube);
@@ -1736,6 +1794,7 @@
         name: limbGroup.name,
         var: unique(javaIdentifier(limbGroup.name, "limb")),
         primeDirection: primeDirectionOf2(limbGroup, chain[0], nesting.parentSegment),
+        upVector: exportedUpOf(limbGroup, nesting.parentSegment),
         followRootOnly: followsRootOnly(limbGroup),
         attachment: null,
         segments: []
@@ -1778,6 +1837,7 @@
       const nesting = nestingFor.get(limb);
       warnings.push(...resolveAttachment(limb, groupOf.get(limb), nesting, locationOf));
       warnings.push(...primeDirectionWarnings(limb, nesting));
+      warnings.push(...upVectorWarnings(limb, groupOf.get(limb), chainOf(groupOf.get(limb))));
       warnings.push(...followRootOnlyWarnings(limb, groupOf.get(limb), nesting));
     }
     if (!limbs.length) warnings.push("No limbs with segments were found; nothing to export.");
@@ -1887,6 +1947,12 @@ ${wrapNames(segmentNames)}
 }
 `.replace(/\t/g, "    ");
   }
+  function isDefaultUp(up) {
+    return Math.abs(up[0]) < 1e-9 && Math.abs(up[1] - 1) < 1e-9 && Math.abs(up[2]) < 1e-9;
+  }
+  function hasUpVector(limb) {
+    return !!limb.upVector && !isDefaultUp(limb.upVector);
+  }
   function wrapNames(names) {
     const lines = [];
     let current = "			";
@@ -1910,6 +1976,10 @@ ${wrapNames(segmentNames)}
         (run) => run.count === 1 ? `				.segment(${f(run.sizeXZ)}, ${f(run.sizeY)}, ${f(run.lengthBlocks)})` : `				.segments(${run.count}, ${f(run.sizeXZ)}, ${f(run.sizeY)}, ${f(run.lengthBlocks)})`
       );
       if (limb.followRootOnly) calls.push("				.followRootOnly(true)");
+      if (limb.upVector && !isDefaultUp(limb.upVector)) {
+        const [x, y, z] = limb.upVector;
+        calls.push(`				.rootUpVector(new Vec3(${d(x)}, ${d(y)}, ${d(z)}))`);
+      }
       if (limb.primeDirection) {
         const [x, y, z] = limb.primeDirection;
         calls.push(`				.rootPrimeDirection(new Vec3(${d(x)}, ${d(y)}, ${d(z)}))`);
@@ -1927,7 +1997,7 @@ ${calls.join("\n")}
 
 import net.jelly.marionette_lib.utility.Limb;
 import net.jelly.marionette_lib.utility.MarionettePart;
-import net.minecraft.world.entity.Entity;${rig.limbs.some((limb) => limb.primeDirection || limb.attachment) ? "\nimport net.minecraft.world.phys.Vec3;" : ""}
+import net.minecraft.world.entity.Entity;${rig.limbs.some((limb) => limb.primeDirection || limb.attachment || hasUpVector(limb)) ? "\nimport net.minecraft.world.phys.Vec3;" : ""}
 
 import java.util.List;
 
@@ -1979,10 +2049,9 @@ import net.minecraftforge.entity.PartEntity;
 import java.util.List;
 
 /**
- * Scaffolded by the Marionette Blockbench plugin. This file is YOURS. The rig
- * lives in {@link ${names.className}Rig}, which is what regenerating rewrites.
- * Exporting only touches this file while its Entity box stays ticked, so untick
- * that once there is behaviour here worth keeping.
+ * Generated by the Marionette Blockbench plugin. 
+ * This file's java is yours to edit and does not need to 
+ * be regenerated unless the number, ordering, or naming of limbs change.
  *
  * Registrations are still yours to make:
  *
@@ -2129,6 +2198,8 @@ public class ${names.className}Renderer extends MobRenderer<${names.className}En
         follow_root_only: !!limb.followRootOnly,
         prime_direction: limb.primeDirection,
         prime_direction_space: limb.primeDirection ? limb.attachment ? "part" : "body" : null,
+        up_vector: limb.upVector || null,
+        up_vector_space: limb.attachment ? "part" : "body",
         attachment: limb.attachment && {
           limb: limb.attachment.limb,
           part_name: limb.attachment.partName,

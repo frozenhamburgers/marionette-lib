@@ -271,50 +271,57 @@ function unitVector(v) {
 	return [v[0] / d, v[1] / d, v[2] / d];
 }
 
-export function partFrameAngles(direction) {
-	const d = unitVector(direction);
-	return {
-		yaw: Math.atan2(d[0], d[2]),
-		pitch: Math.asin(Math.max(-1, Math.min(1, d[1]))),
-	};
+export const DEFAULT_UP = [0, 1, 0];
+
+function crossProduct(a, b) {
+	return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 }
 
-// Vec3.xRot(a) is Rx(-a) while Vec3.yRot(a) is Ry(a), the two do not share a handedness, mirrored here
-function xRot(v, a) {
-	const c = Math.cos(a), s = Math.sin(a);
-	return [v[0], v[1] * c + v[2] * s, v[2] * c - v[1] * s];
-}
+// +Z along `direction`, +Y leaning towards `up`. mirrors MarionettePart.partFrame
+export function partFrame(direction, up = DEFAULT_UP) {
+	let forward = unitVector(direction);
+	if (!forward[0] && !forward[1] && !forward[2]) forward = [0, 1, 0];
 
-function yRot(v, a) {
-	const c = Math.cos(a), s = Math.sin(a);
-	return [v[0] * c + v[2] * s, v[1], v[2] * c - v[0] * s];
-}
+	let upward = unitVector(up);
+	if (!upward[0] && !upward[1] && !upward[2]) upward = DEFAULT_UP;
 
-/** MarionettePart.partToWorld: `local` read in the frame `direction` defines */
-export function partToWorld(direction, local) {
-	const { yaw, pitch } = partFrameAngles(direction);
-	return yRot(xRot(local, pitch), yaw);
-}
+	let sideways = crossProduct(upward, forward);
+	// up along the direction picks out no sideways. matches the java fallback, keeps the frame finite, snaps here
+	if (Math.hypot(...sideways) < 1.0e-5) {
+		const fallback = Math.abs(forward[1]) > 0.9 ? [0, 0, 1] : [0, 1, 0];
+		sideways = crossProduct(fallback, forward);
+	}
+	sideways = unitVector(sideways);
 
-/** MarionettePart.worldToPart */
-export function worldToPart(direction, world) {
-	const { yaw, pitch } = partFrameAngles(direction);
-	return xRot(yRot(world, -yaw), -pitch);
-}
-
-/**
- * the part frame itself as a rotation, R = Ry(yaw)*Rx(-pitch), so R applied to +Z is `direction`.
- * distinct from quaternionFromUnitVectors, which takes the shortest path and so carries a roll:
- * both land +Z on the direction, only this one agrees with where part space puts everything else
- */
-export function partQuaternion(direction) {
-	const { yaw, pitch } = partFrameAngles(direction);
-	const cy = Math.cos(yaw), sy = Math.sin(yaw);
-	const cp = Math.cos(pitch), sp = Math.sin(pitch);
-
+	const vertical = crossProduct(forward, sideways);
 	return quaternionFromMatrix([
-		[cy, -sy * sp, sy * cp],
-		[0, cp, sp],
-		[-sy, -cy * sp, cy * cp],
+		[sideways[0], vertical[0], forward[0]],
+		[sideways[1], vertical[1], forward[1]],
+		[sideways[2], vertical[2], forward[2]],
 	]);
 }
+
+export function partToWorld(direction, up, local) {
+	return applyQuaternion(partFrame(direction, up), local);
+}
+
+export function worldToPart(direction, up, world) {
+	return applyQuaternion(quaternionConjugate(partFrame(direction, up)), world);
+}
+
+export function modelRotationOf(frame) {
+	const model = quaternionMultiply(quaternionMultiply(AXIS_FLIP, frame), HALF_TURN_Z);
+	const ex = applyQuaternion(model, [1, 0, 0]);
+	const ey = applyQuaternion(model, [0, 1, 0]);
+	const ez = applyQuaternion(model, [0, 0, 1]);
+
+	// atan2 of the column length, not asin(-ex[2]): lock is at a direction along +-X, common
+	const cb = Math.hypot(ex[0], ex[1]);
+	const yRot = Math.atan2(-ex[2], cb);
+
+	if (cb < 1.0e-6) return { xRot: Math.atan2(-ez[1], ey[1]), yRot, zRot: 0 };
+	return { xRot: Math.atan2(ey[2], ez[2]), yRot, zRot: Math.atan2(ex[1], ex[0]) };
+}
+
+const AXIS_FLIP = [1, 0, 0, 0];
+const HALF_TURN_Z = [0, 0, 1, 0];

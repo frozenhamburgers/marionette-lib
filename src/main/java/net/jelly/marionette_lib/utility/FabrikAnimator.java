@@ -9,6 +9,8 @@ import net.minecraft.world.phys.Vec3;
  * Reaching Inverse Kinematics).
  */
 public class FabrikAnimator {
+    private static final Vec3 DEFAULT_UP = new Vec3(0, 1, 0);
+
     private final Entity owner;
     private final MarionettePart<?>[] allParts;
     private Vec3 fabrikTarget = Vec3.ZERO;
@@ -18,6 +20,8 @@ public class FabrikAnimator {
     private Vec3 rootOffset = Vec3.ZERO;
     private Vec3 primeDirection = null;
     private Vec3 rootPrimeDirection = null;
+    private Vec3 upVector = null;
+    private Vec3 rootUpVector = null;
 
     public FabrikAnimator(Entity owner, MarionettePart<?>[] allParts) {
         this.owner = owner;
@@ -97,9 +101,6 @@ public class FabrikAnimator {
      * prime directions are always in the frame the limb is rooted in. If parent segment -> prime direction
      * relative to the segment's frame, if no parent segment -> prime direction relative to entity's body frame (yaw only)
      * Any changes to this default system must be folded in yourself via {@link #setPrimeDirection(Vec3)}
-     * <p>
-     * frame is picked at solve time, so {@link #setRoot(Vec3)} or {@link #detachRoot()} on an attached
-     * chain silently rereads an already-set direction as an entity-frame one.
      */
     public void setRootPrimeDirection(Vec3 direction) {
         this.rootPrimeDirection = direction == null ? null : direction.normalize();
@@ -113,6 +114,42 @@ public class FabrikAnimator {
     public void clearPrimeDirection() {
         this.primeDirection = null;
         this.rootPrimeDirection = null;
+    }
+
+    /** up for this chain, world space. clear with {@link #clearUpVector()} */
+    public void setUpVector(Vec3 up) {
+        this.upVector = up == null ? null : up.normalize();
+        this.rootUpVector = null;
+    }
+
+    public Vec3 getUpVector() {
+        return upVector;
+    }
+
+    /** as {@link #setUpVector(Vec3)} but read in the frame the chain is rooted in, +Z forward. same convention as {@link #setRootPrimeDirection(Vec3)} */
+    public void setRootUpVector(Vec3 up) {
+        this.rootUpVector = up == null ? null : up.normalize();
+        this.upVector = null;
+    }
+
+    public Vec3 getRootUpVector() {
+        return rootUpVector;
+    }
+
+    /** fall back to the owner's {@link Marionette#marionetteUp()} */
+    public void clearUpVector() {
+        this.upVector = null;
+        this.rootUpVector = null;
+    }
+
+    protected Vec3 resolveUpVector() {
+        if (upVector != null) return upVector;
+        if (rootUpVector != null) {
+            if (rootPart != null) return rootPart.partToWorld(rootUpVector);
+            return rootUpVector.yRot(-owner.getYRot() * Mth.DEG_TO_RAD);
+        }
+        if (owner instanceof Marionette marionette) return marionette.marionetteUp();
+        return DEFAULT_UP;
     }
 
     // -yaw matches Entity.calculateViewVector
@@ -208,6 +245,10 @@ public class FabrikAnimator {
     }
 
     public void tickMultipart() {
+        // before anything reads a part frame this tick, solve and renderer alike
+        Vec3 up = resolveUpVector();
+        for (MarionettePart<?> part : allParts) part.setUpVector(up);
+
         Vec3 prime = resolvePrimeDirection();
         if (prime != null) primeMultipart(prime);
 

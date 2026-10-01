@@ -11,8 +11,12 @@ import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.entity.PartEntity;
+import org.joml.Quaternionf;
+import org.joml.Vector3f;
 
 public abstract class MarionetteModel<T extends Entity> extends EntityModel<T> {
+    private static final Quaternionf AXIS_FLIP = new Quaternionf().rotationX(Mth.PI);
+    private static final Quaternionf HALF_TURN_Z = new Quaternionf().rotationZ(Mth.PI);
 
     /** array of model parts corresponding to segment names */
     protected ModelPart[] allSegments;
@@ -63,10 +67,8 @@ public abstract class MarionetteModel<T extends Entity> extends EntityModel<T> {
         for (int i = 0; i < allSegments.length; i++) {
             MarionettePart<?> part = (MarionettePart<?>) allParts[i];
 
-            // read through the same world-to-model mapping setPos uses below, (x, -y, -z), so the part's
-            // local +Z lands on that image of its direction. taking the angles off the direction as is,
-            // which is what this did before, pointed every segment's geometry back down its own axis
-            allSegments[i].setRotation(part.partPitch(), Mth.PI - part.partYaw(), 0f);
+            // same world-to-model mapping setPos uses below, (x, -y, -z), so local +Z lands on that image of the direction
+            applyRotation(allSegments[i], part.partFrame());
 
             Vec3 entityPos = entity.getPosition(partialTicks);
             Vec3 partPos = part.getPosition(partialTicks);
@@ -77,5 +79,23 @@ public abstract class MarionetteModel<T extends Entity> extends EntityModel<T> {
             // 16 b/c 1 block is 16 units in model space
             allSegments[i].setPos((float) (16f * xOffset), (float) (24 - 16f * (yOffset + part.getBbHeight() / 2)), (float) (-16f * zOffset));
         }
+    }
+
+    private static void applyRotation(ModelPart segment, Quaternionf frame) {
+        Quaternionf model = new Quaternionf(AXIS_FLIP).mul(frame).mul(HALF_TURN_Z);
+
+        Vector3f ex = model.transform(new Vector3f(1, 0, 0));
+        Vector3f ey = model.transform(new Vector3f(0, 1, 0));
+        Vector3f ez = model.transform(new Vector3f(0, 0, 1));
+
+        // atan2 of the column length, not asin(-ex.z): lock is at a direction along +-X, common, and asin loses precision before it
+        float cb = Mth.sqrt(ex.x * ex.x + ex.y * ex.y);
+        float yRot = (float) Math.atan2(-ex.z, cb);
+
+        if (cb < 1.0e-6f) {
+            segment.setRotation((float) Math.atan2(-ez.y, ey.y), yRot, 0f);
+            return;
+        }
+        segment.setRotation((float) Math.atan2(ey.z, ez.z), yRot, (float) Math.atan2(ex.y, ex.x));
     }
 }
