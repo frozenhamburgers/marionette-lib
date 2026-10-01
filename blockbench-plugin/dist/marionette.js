@@ -9,7 +9,7 @@
   var DEFAULT_BONE_LENGTH = 8;
   var DEFAULT_BONE_WIDTH = 2;
   var UNITS_PER_BLOCK = 16;
-  var PLUGIN_VERSION = "0.3.0";
+  var PLUGIN_VERSION = "1.0.0";
   var TARGET_FABRIK = "fabrik";
   var TARGET_PRIME = "prime";
 
@@ -2711,6 +2711,9 @@ ${err && err.message}`
       icon: "polyline",
       version: PLUGIN_VERSION,
       variant: "both",
+      // gates Plugin.fetchAbout, which is the only thing that reads about.md. loaded from file it
+      // looks for one beside the js, so build.mjs copies it into dist/
+      new_repository_format: true,
       tags: ["Minecraft: Java Edition", "Rigging", "Animation"],
       onload() {
         const step = (label, install) => {

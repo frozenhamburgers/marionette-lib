@@ -1,6 +1,7 @@
 //es modules in src/ get flattened here
 
 import * as esbuild from 'esbuild';
+import { copyFileSync } from 'node:fs';
 
 const watch = process.argv.includes('--watch');
 
@@ -24,5 +25,11 @@ if (watch) {
 	console.log('watching src/ ...');
 } else {
 	await esbuild.build(options);
+	copyAbout();
 	console.log('built dist/marionette.js');
+}
+
+// Plugin.fetchAbout reads about.md from beside the loaded js, so the About tab stays empty without this
+function copyAbout() {
+	copyFileSync('about.md', 'dist/about.md');
 }

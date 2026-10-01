@@ -37,6 +37,7 @@ import { installBoneVisibility } from './bones.js';
 		icon: 'polyline',
 		version: PLUGIN_VERSION,
 		variant: 'both',
+		new_repository_format: true,
 		tags: ['Minecraft: Java Edition', 'Rigging', 'Animation'],
 
 		onload() {
