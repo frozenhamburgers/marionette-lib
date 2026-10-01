@@ -3,7 +3,7 @@
 import { PLUGIN_VERSION } from './constants.js';
 import { isMarionetteFormat } from './roles.js';
 import { collectRig, javaIdentifier } from './rig.js';
-import { emitModel, emitEntity, emitRenderer, emitSidecar } from './java.js';
+import { emitModel, emitRig, emitEntity, emitRenderer, emitSidecar } from './java.js';
 
 const BASE_CLASSES = {
 	'PathfinderMob': 'PathfinderMob',
@@ -50,16 +50,41 @@ export function textureFile(names) {
 	return { name: `${names.textureName}.png`, content: texture.getDataURL(), savetype: 'image' };
 }
 
-export function buildFiles(rig, names) {
-	const files = [
-		{ name: `${names.className}Model.java`, content: emitModel(rig, names) },
-		{ name: `${names.className}Entity.java`, content: emitEntity(rig, names) },
-		{ name: `${names.className}Renderer.java`, content: emitRenderer(rig, names) },
-		{ name: `${snakeCase(names.className)}.marionette.json`, content: emitSidecar(rig, names) },
-	];
+// which outputs the dialogs checkboxes map to
+export const OUTPUTS = ['model', 'rig', 'entity', 'renderer', 'texture', 'sidecar'];
 
-	const texture = textureFile(names);
-	if (texture) files.push(texture);
+export const DEFAULT_SELECTION = {
+	model: true, rig: true, entity: true, renderer: true, texture: true, sidecar: false,
+};
+
+export function buildFiles(rig, names, selection = DEFAULT_SELECTION) {
+	const files = [];
+	const wanted = key => selection[key] !== false;
+
+	if (wanted('model')) {
+		files.push({ name: `${names.className}Model.java`, content: emitModel(rig, names) });
+	}
+	if (wanted('rig')) {
+		files.push({ name: `${names.className}Rig.java`, content: emitRig(rig, names) });
+	}
+	if (wanted('entity')) {
+		files.push({ name: `${names.className}Entity.java`, content: emitEntity(rig, names) });
+	}
+	if (wanted('renderer')) {
+		files.push({ name: `${names.className}Renderer.java`, content: emitRenderer(rig, names) });
+	}
+	if (wanted('sidecar')) {
+		files.push({
+			name: `${snakeCase(names.className)}.marionette.json`,
+			content: emitSidecar(rig, names),
+		});
+	}
+
+	if (wanted('texture')) {
+		const texture = textureFile(names);
+		if (texture) files.push(texture);
+	}
+
 	return files;
 }
 
@@ -115,7 +140,23 @@ export function runExport(form) {
 	if (!rig.segments.length) return false;
 
 	const names = buildNames(form, `Marionette Blockbench plugin ${PLUGIN_VERSION}`);
-	return writeFiles(buildFiles(rig, names), names);
+	const files = buildFiles(rig, names, selectionOf(form));
+	if (!files.length) {
+		Blockbench.showQuickMessage('Nothing selected to export.', 2500);
+		return false;
+	}
+
+	return writeFiles(files, names);
+}
+
+// the dialogs checkboxes, which arrive as export_<key> so they cannot collide with the name fields
+export function selectionOf(form) {
+	const selection = {};
+	for (const key of OUTPUTS) {
+		const value = form[`export_${key}`];
+		selection[key] = value === undefined ? DEFAULT_SELECTION[key] : !!value;
+	}
+	return selection;
 }
 
 export function buildExportAction() {
@@ -153,9 +194,22 @@ export function buildExportAction() {
 						default: 'PathfinderMob',
 						options: Object.fromEntries(Object.keys(BASE_CLASSES).map(k => [k, k])),
 					},
-					overwrite_warning: {
-						type: 'info',
-						text: 'Every file is overwritten without asking, the texture included. Keep hand edits elsewhere.',
+					files_header: { type: 'info', text: 'Files to write. Every ticked one is overwritten without asking.' },
+					export_model: { label: 'Model', type: 'checkbox', value: true },
+					export_rig: { label: 'Rig', type: 'checkbox', value: true },
+					export_entity: {
+						label: 'Entity',
+						type: 'checkbox',
+						value: true,
+						description: 'The one file that is yours. Untick it once there is behaviour in it worth keeping; the rig is a separate file, so rig changes still land.',
+					},
+					export_renderer: { label: 'Renderer', type: 'checkbox', value: true },
+					export_texture: { label: 'Texture', type: 'checkbox', value: true },
+					export_sidecar: {
+						label: 'JSON sidecar',
+						type: 'checkbox',
+						value: false,
+						description: 'Lengths, hitbox sizes and attachments as data. Nothing reads it back; it is for diffing and tooling.',
 					},
 				},
 				onConfirm(form) {
