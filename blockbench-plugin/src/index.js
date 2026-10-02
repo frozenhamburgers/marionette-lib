@@ -31,10 +31,8 @@ import { installBoneVisibility } from './bones.js';
 		title: 'Marionette',
 		author: 'JellyCarbonara',
 		description:
-			'Authoring format for the Marionette procedural animation library: ' +
-			'segment and limb rigging with visual length handles, and a Java exporter ' +
-			'that does the pose-zeroing and origin-centering by hand no longer required.',
-		icon: 'polyline',
+			'Model & rig authoring format for the Marionette procedural animation library. ',
+		icon: 'logo.png',
 		version: PLUGIN_VERSION,
 		variant: 'both',
 		new_repository_format: true,

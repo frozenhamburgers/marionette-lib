@@ -2707,12 +2707,10 @@ ${err && err.message}`
     BBPlugin.register("marionette", {
       title: "Marionette",
       author: "JellyCarbonara",
-      description: "Authoring format for the Marionette procedural animation library: segment and limb rigging with visual length handles, and a Java exporter that does the pose-zeroing and origin-centering by hand no longer required.",
-      icon: "polyline",
+      description: "Model & rig authoring format for the Marionette procedural animation library. ",
+      icon: "logo.png",
       version: PLUGIN_VERSION,
       variant: "both",
-      // gates Plugin.fetchAbout, which is the only thing that reads about.md. loaded from file it
-      // looks for one beside the js, so build.mjs copies it into dist/
       new_repository_format: true,
       tags: ["Minecraft: Java Edition", "Rigging", "Animation"],
       onload() {

@@ -1,7 +1,8 @@
 //es modules in src/ get flattened here
 
 import * as esbuild from 'esbuild';
-import { copyFileSync } from 'node:fs';
+import { copyFileSync, readFileSync, writeFileSync } from 'node:fs';
+import { extname } from 'node:path';
 
 const watch = process.argv.includes('--watch');
 
@@ -25,11 +26,23 @@ if (watch) {
 	console.log('watching src/ ...');
 } else {
 	await esbuild.build(options);
-	copyAbout();
+	buildAssets();
 	console.log('built dist/marionette.js');
 }
 
-// Plugin.fetchAbout reads about.md from beside the loaded js, so the About tab stays empty without this
-function copyAbout() {
-	copyFileSync('about.md', 'dist/about.md');
+function buildAssets() {
+	writeFileSync('dist/about.md', inlineImages(readFileSync('about.md', 'utf8')));
+	copyFileSync('logo.png', 'dist/logo.png');
+}
+
+function inlineImages(markdown) {
+	return markdown.replace(/!\[([^\]]*)\]\((?!\w+:)([^)]+)\)/g, (whole, alt, file) => {
+		const types = {
+			'.png': 'image/png', '.svg': 'image/svg+xml',
+			'.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif',
+		};
+		const type = types[extname(file).toLowerCase()];
+		if (!type) throw new Error(`about.md references ${file}, which is not an inlinable image`);
+		return `![${alt}](data:${type};base64,${readFileSync(file).toString('base64')})`;
+	});
 }
